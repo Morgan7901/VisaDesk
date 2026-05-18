@@ -14,6 +14,7 @@ import {
   XCircle,
   Clock,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileUploader } from "./FileUploader";
@@ -112,6 +113,8 @@ export function DocumentChecklist({ documents, caseId }: Props) {
 
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Review modal
   const [reviewDoc, setReviewDoc] = useState<CaseDocument | null>(null);
@@ -130,6 +133,14 @@ export function DocumentChecklist({ documents, caseId }: Props) {
   const [addRequired, setAddRequired] = useState(true);
   const [submittingAdd, setSubmittingAdd] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    const res = await fetch(`/api/documents/${id}/delete`, { method: "DELETE" });
+    setDeletingId(null);
+    setConfirmDeleteId(null);
+    if (res.ok) router.refresh();
+  }
 
   async function handleDownload(doc: CaseDocument) {
     setDownloadingId(doc.id);
@@ -381,6 +392,41 @@ export function DocumentChecklist({ documents, caseId }: Props) {
                             >
                               <RefreshCw className="h-3.5 w-3.5" />
                               Re-upload
+                            </button>
+                          )}
+
+                          {/* Remove / inline confirm */}
+                          {confirmDeleteId === doc.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-slate-500">Remove?</span>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(doc.id)}
+                                disabled={deletingId === doc.id}
+                                className="flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                              >
+                                {deletingId === doc.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : null}
+                                Yes
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(null)}
+                                disabled={deletingId === doc.id}
+                                className="rounded-md px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(doc.id)}
+                              className="rounded-md p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-500 transition-colors"
+                              title="Remove document"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
