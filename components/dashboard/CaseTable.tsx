@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatDistanceToNow, parseISO } from "date-fns";
 import { Search, Plus, ArrowRight, Briefcase } from "lucide-react";
@@ -51,7 +50,6 @@ interface CaseTableProps {
 }
 
 export function CaseTable({ cases }: CaseTableProps) {
-  const router = useRouter();
   const [search, setSearch] = useState("");
   const [visaFilter, setVisaFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -168,38 +166,48 @@ export function CaseTable({ cases }: CaseTableProps) {
                 {filtered.map((c) => (
                   <tr
                     key={c.id}
-                    className="group cursor-pointer hover:bg-slate-50 transition-colors"
-                    onClick={() => router.push(`/dashboard/cases/${c.id}`)}
+                    className="group hover:bg-slate-50 transition-colors"
                   >
-                    <td className="px-5 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">
-                      {c.ref_number ?? "—"}
+                    <td className="font-mono text-xs text-slate-600 whitespace-nowrap">
+                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        {c.ref_number ?? "—"}
+                      </Link>
                     </td>
-                    <td className="px-5 py-3 font-medium text-slate-800 whitespace-nowrap">
-                      {c.clients?.full_name ?? "—"}
+                    <td className="font-medium text-slate-800 whitespace-nowrap">
+                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        {c.clients?.full_name ?? "—"}
+                      </Link>
                     </td>
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      <span className="inline-block bg-[#0f172a] px-2 py-0.5 text-xs font-medium text-white">
-                        SC-{c.visa_subclass}
-                      </span>
+                    <td className="whitespace-nowrap">
+                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        <span className="inline-block bg-[#0f172a] px-2 py-0.5 text-xs font-medium text-white">
+                          SC-{c.visa_subclass}
+                        </span>
+                      </Link>
                     </td>
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      <StatusBadge status={c.status} />
+                    <td className="whitespace-nowrap">
+                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        <StatusBadge status={c.status} />
+                      </Link>
                     </td>
-                    <td className="px-5 py-3 text-xs text-slate-500 max-w-[160px] truncate">
-                      {c.current_stage_label ?? "—"}
+                    <td className="text-xs text-slate-500 max-w-[160px] truncate">
+                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3 truncate">
+                        {c.current_stage_label ?? "—"}
+                      </Link>
                     </td>
-                    <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
-                      {c.agent?.full_name ?? "—"}
+                    <td className="text-xs text-slate-500 whitespace-nowrap">
+                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        {c.agent?.full_name ?? "—"}
+                      </Link>
                     </td>
-                    <td className="px-5 py-3 text-xs text-slate-400 whitespace-nowrap">
-                      {formatDistanceToNow(parseISO(c.created_at), {
-                        addSuffix: true,
-                      })}
+                    <td className="text-xs text-slate-400 whitespace-nowrap">
+                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        {formatDistanceToNow(parseISO(c.created_at), {
+                          addSuffix: true,
+                        })}
+                      </Link>
                     </td>
-                    <td
-                      className="pr-4 text-right whitespace-nowrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <td className="pr-4 text-right whitespace-nowrap">
                       <Link
                         href={`/dashboard/cases/${c.id}`}
                         className="inline-flex items-center gap-1 border border-slate-200 px-2.5 py-1 text-xs text-slate-500 opacity-0 group-hover:opacity-100 hover:border-slate-300 hover:text-slate-700 transition-all"
