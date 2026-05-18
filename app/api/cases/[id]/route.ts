@@ -1,0 +1,48 @@
+import { createClient } from "@/lib/supabase/server";
+import { NextRequest, NextResponse } from "next/server";
+
+const ALLOWED_FIELDS = new Set([
+  "lodgement_date",
+  "trn",
+  "grant_date",
+  "visa_expiry",
+  "notes",
+]);
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await request.json();
+
+  // Allow only safe fields
+  const update: Record<string, string | null> = {};
+  for (const [key, val] of Object.entries(body)) {
+    if (ALLOWED_FIELDS.has(key)) {
+      update[key] = (val as string) || null;
+    }
+  }
+
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json({ error: "No valid fields provided." }, { status: 400 });
+  }
+
+  // RLS enforces firm ownership on update
+  const { data: updated, error } = await supabase
+    .from("cases")
+    .update(update)
+    .eq("id", params.id)
+    .select("id");
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!updated?.length) return NextResponse.json({ error: "Case not found." }, { status: 404 });
+
+  return NextResponse.json({ success: true });
+}
