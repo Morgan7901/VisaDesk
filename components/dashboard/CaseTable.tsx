@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatDistanceToNow, parseISO } from "date-fns";
 import { Search, Plus, ArrowRight, Briefcase } from "lucide-react";
@@ -50,6 +51,7 @@ interface CaseTableProps {
 }
 
 export function CaseTable({ cases }: CaseTableProps) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [visaFilter, setVisaFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -166,7 +168,8 @@ export function CaseTable({ cases }: CaseTableProps) {
                 {filtered.map((c) => (
                   <tr
                     key={c.id}
-                    className="group hover:bg-slate-50 transition-colors"
+                    className="group cursor-pointer hover:bg-slate-50 transition-colors"
+                    onClick={() => router.push(`/dashboard/cases/${c.id}`)}
                   >
                     <td className="px-5 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">
                       {c.ref_number ?? "—"}
@@ -193,7 +196,10 @@ export function CaseTable({ cases }: CaseTableProps) {
                         addSuffix: true,
                       })}
                     </td>
-                    <td className="pr-4 text-right whitespace-nowrap">
+                    <td
+                      className="pr-4 text-right whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Link
                         href={`/dashboard/cases/${c.id}`}
                         className="inline-flex items-center gap-1 border border-slate-200 px-2.5 py-1 text-xs text-slate-500 opacity-0 group-hover:opacity-100 hover:border-slate-300 hover:text-slate-700 transition-all"
