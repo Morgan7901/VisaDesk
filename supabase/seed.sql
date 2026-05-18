@@ -31,10 +31,12 @@ begin
   -- Templates
   -- ============================================================
 
-  insert into workflow_templates (id, visa_subclass, label, description) values
-    (v_tmpl_500, '500', 'Student Visa (Subclass 500)',
+  -- firm_id = null marks these as system defaults; firms get their own
+  -- editable copies via clone_workflow_for_firm().
+  insert into workflow_templates (id, firm_id, visa_subclass, label, description) values
+    (v_tmpl_500, null, '500', 'Student Visa (Subclass 500)',
      'Workflow for student visa applications including GTE assessment and CoE management.'),
-    (v_tmpl_482, '482', 'Temporary Skill Shortage (Subclass 482)',
+    (v_tmpl_482, null, '482', 'Temporary Skill Shortage (Subclass 482)',
      'Workflow for TSS visa applications covering sponsorship, nomination, and visa stages.');
 
   -- ============================================================
