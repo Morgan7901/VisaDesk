@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { formatDistanceToNow, parseISO } from "date-fns";
-import { Search, Plus, ArrowRight, Briefcase } from "lucide-react";
+import { Search, Plus, Briefcase } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NewCaseModal } from "@/components/cases/NewCaseModal";
 
@@ -163,11 +163,7 @@ export function CaseTable({ cases }: CaseTableProps) {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="group cursor-pointer hover:bg-slate-50 transition-colors"
-                    onClick={() => { window.location.href = `/dashboard/cases/${c.id}`; }}
-                  >
+                  <tr key={c.id} className="group hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">
                       {c.ref_number ?? "—"}
                     </td>
@@ -193,12 +189,12 @@ export function CaseTable({ cases }: CaseTableProps) {
                         addSuffix: true,
                       })}
                     </td>
-                    <td className="pr-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    <td className="pr-4 text-right whitespace-nowrap">
                       <a
                         href={`/dashboard/cases/${c.id}`}
-                        className="inline-flex items-center gap-1 border border-slate-200 px-2.5 py-1 text-xs text-slate-500 opacity-0 group-hover:opacity-100 hover:border-slate-300 hover:text-slate-700 transition-all"
+                        className="text-sm font-medium text-navy-600 hover:underline"
                       >
-                        View <ArrowRight className="h-3 w-3" />
+                        View
                       </a>
                     </td>
                   </tr>
