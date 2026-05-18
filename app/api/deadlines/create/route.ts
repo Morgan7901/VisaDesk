@@ -1,5 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+
+const supabaseAdmin = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -9,13 +16,16 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: profile } = await supabase
+  // Use service role client to bypass RLS on profiles — the session JWT may
+  // not yet carry firm_id if the user just registered.
+  const { data: profile } = await supabaseAdmin
     .from("profiles")
     .select("firm_id")
     .eq("id", user.id)
     .single();
 
   if (!profile?.firm_id) {
+    console.error("[deadlines/create] profile has no firm_id for user:", user.id);
     return NextResponse.json({ error: "No firm associated." }, { status: 400 });
   }
 

@@ -25,13 +25,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
+  // Use service role client to bypass RLS on profiles — the session JWT may
+  // not yet carry firm_id if the user just registered.
+  const { data: profile } = await supabaseAdmin
     .from("profiles")
     .select("firm_id, id")
     .eq("id", user.id)
     .single();
 
   if (!profile?.firm_id) {
+    console.error("[cases/create] profile has no firm_id for user:", user.id);
     return NextResponse.json(
       { error: "Profile not associated with a firm." },
       { status: 400 }
