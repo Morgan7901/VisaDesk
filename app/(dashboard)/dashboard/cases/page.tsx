@@ -1,17 +1,44 @@
+import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { CaseTable } from "@/components/dashboard/CaseTable";
 import type { CaseRow } from "@/components/dashboard/CaseTable";
 
 export const metadata: Metadata = { title: "Cases — VisaDesk" };
 
-export default async function CasesPage() {
-  const supabase = await createClient();
+const supabaseAdmin = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
-  // Primary query — FK hints for client and agent joins.
-  // current_stage_id has no FK constraint; stage labels are resolved
-  // in a separate batch query below.
-  const { data: rawCases, error: casesError } = await supabase
+export default async function CasesPage() {
+  // Auth via session client — admin client does not hold session context
+  const sessionClient = await createClient();
+  const {
+    data: { user },
+  } = await sessionClient.auth.getUser();
+  if (!user) redirect("/login");
+
+  // Fetch firm_id via admin client to bypass RLS on profiles
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("firm_id")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.firm_id) {
+    console.log("[cases] no firm_id for user:", user.id);
+    redirect("/login");
+  }
+
+  const firmId: string = profile.firm_id;
+  console.log("[cases] firm_id:", firmId);
+
+  // Primary query with FK join hints for client and agent names.
+  // current_stage_id has no FK constraint; stage labels resolved separately.
+  const { data: rawCases, error: casesError } = await supabaseAdmin
     .from("cases")
     .select(
       `id, ref_number, visa_subclass, status, created_at, updated_at,
@@ -19,6 +46,7 @@ export default async function CasesPage() {
        clients!client_id(full_name),
        agent:profiles!agent_id(full_name)`
     )
+    .eq("firm_id", firmId)
     .order("updated_at", { ascending: false });
 
   console.log("[cases] primary query —", {
@@ -26,8 +54,7 @@ export default async function CasesPage() {
     error: casesError ? casesError.message : null,
   });
 
-  // If the FK-join query errors, fall back to a plain query and resolve
-  // client + agent names in separate batch lookups so the table still renders.
+  // If FK-join query errors, fall back to plain query + separate batch lookups
   let cases: {
     id: string;
     ref_number: string;
@@ -45,11 +72,12 @@ export default async function CasesPage() {
   if (casesError || !rawCases) {
     console.log("[cases] falling back to query without FK joins");
 
-    const { data: plain, error: plainError } = await supabase
+    const { data: plain, error: plainError } = await supabaseAdmin
       .from("cases")
       .select(
         "id, ref_number, visa_subclass, status, created_at, updated_at, current_stage_id, client_id, agent_id"
       )
+      .eq("firm_id", firmId)
       .order("updated_at", { ascending: false });
 
     console.log("[cases] fallback query —", {
@@ -59,13 +87,12 @@ export default async function CasesPage() {
 
     const rows = plain ?? [];
 
-    // Batch-resolve client full_names
     const clientIds = Array.from(
       new Set(rows.map((r) => r.client_id).filter(Boolean))
     ) as string[];
     const clientMap: Record<string, string> = {};
     if (clientIds.length) {
-      const { data: clientRows } = await supabase
+      const { data: clientRows } = await supabaseAdmin
         .from("clients")
         .select("id, full_name")
         .in("id", clientIds);
@@ -74,13 +101,12 @@ export default async function CasesPage() {
       });
     }
 
-    // Batch-resolve agent full_names
     const agentIds = Array.from(
       new Set(rows.map((r) => r.agent_id).filter(Boolean))
     ) as string[];
     const agentMap: Record<string, string> = {};
     if (agentIds.length) {
-      const { data: agentRows } = await supabase
+      const { data: agentRows } = await supabaseAdmin
         .from("profiles")
         .select("id, full_name")
         .in("id", agentIds);
@@ -117,14 +143,14 @@ export default async function CasesPage() {
     }));
   }
 
-  // Batch-fetch stage labels for any non-null current_stage_id values
+  // Batch-fetch stage labels for non-null current_stage_id values
   const stageIds = Array.from(
     new Set(cases.map((c) => c.current_stage_id).filter(Boolean))
   ) as string[];
 
   const stageLabels: Record<string, string> = {};
   if (stageIds.length) {
-    const { data: stages } = await supabase
+    const { data: stages } = await supabaseAdmin
       .from("workflow_stages")
       .select("id, label")
       .in("id", stageIds);

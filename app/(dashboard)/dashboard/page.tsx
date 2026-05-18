@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { addDays, startOfMonth, format } from "date-fns";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { DeadlinePanel } from "@/components/dashboard/DeadlinePanel";
@@ -8,14 +10,47 @@ import type { RecentCaseRow } from "@/components/dashboard/RecentCases";
 
 export const metadata = { title: "Dashboard — VisaDesk" };
 
+const supabaseAdmin = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
+
 export default async function DashboardPage() {
-  const supabase = await createClient();
+  // Auth via session client — admin client does not hold session context
+  const sessionClient = await createClient();
+  const {
+    data: { user },
+  } = await sessionClient.auth.getUser();
+  if (!user) redirect("/login");
+
+  // Fetch firm_id via admin client to bypass RLS on profiles
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("firm_id")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.firm_id) {
+    console.log("[dashboard] no firm_id for user:", user.id);
+    redirect("/login");
+  }
+
+  const firmId: string = profile.firm_id;
+  console.log("[dashboard] firm_id:", firmId);
 
   const today = new Date();
   const todayStr = format(today, "yyyy-MM-dd");
   const plus7 = format(addDays(today, 7), "yyyy-MM-dd");
   const plus14 = format(addDays(today, 14), "yyyy-MM-dd");
   const monthStart = format(startOfMonth(today), "yyyy-MM-dd");
+
+  // case_documents has no firm_id column; resolve via case IDs first
+  const { data: firmCaseRows } = await supabaseAdmin
+    .from("cases")
+    .select("id")
+    .eq("firm_id", firmId);
+  const firmCaseIds = firmCaseRows?.map((r) => r.id) ?? [];
 
   const [
     { count: activeCases },
@@ -25,46 +60,56 @@ export default async function DashboardPage() {
     { data: rawDeadlines },
     { data: rawCases },
   ] = await Promise.all([
-    supabase
+    supabaseAdmin
       .from("cases")
       .select("id", { count: "exact", head: true })
+      .eq("firm_id", firmId)
       .eq("status", "active"),
 
-    supabase
+    supabaseAdmin
       .from("deadlines")
       .select("id", { count: "exact", head: true })
+      .eq("firm_id", firmId)
       .eq("is_complete", false)
       .gte("deadline_date", todayStr)
       .lte("deadline_date", plus7),
 
-    supabase
+    supabaseAdmin
       .from("cases")
       .select("id", { count: "exact", head: true })
+      .eq("firm_id", firmId)
       .eq("status", "granted")
       .gte("grant_date", monthStart),
 
-    supabase
-      .from("case_documents")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending"),
+    firmCaseIds.length > 0
+      ? supabaseAdmin
+          .from("case_documents")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending")
+          .in("case_id", firmCaseIds)
+      : Promise.resolve({ count: 0, data: null, error: null }),
 
-    supabase
+    supabaseAdmin
       .from("deadlines")
       .select(
         "id, label, deadline_date, deadline_type, cases(ref_number, clients(full_name))"
       )
+      .eq("firm_id", firmId)
       .eq("is_complete", false)
       .gte("deadline_date", todayStr)
       .lte("deadline_date", plus14)
       .order("deadline_date", { ascending: true })
       .limit(20),
 
-    supabase
+    supabaseAdmin
       .from("cases")
       .select("id, ref_number, visa_subclass, status, updated_at, clients(full_name)")
+      .eq("firm_id", firmId)
       .order("updated_at", { ascending: false })
       .limit(5),
   ]);
+
+  console.log("[dashboard] activeCases:", activeCases, "weekDeadlines:", weekDeadlines);
 
   return (
     <div className="space-y-6">
@@ -76,14 +121,11 @@ export default async function DashboardPage() {
       />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
-        {/* Deadline panel — wider */}
         <div className="xl:col-span-3">
           <DeadlinePanel
             initialDeadlines={(rawDeadlines ?? []) as unknown as DeadlineRow[]}
           />
         </div>
-
-        {/* Recent cases — narrower on xl, but stacks below on smaller screens */}
         <div className="xl:col-span-2">
           <RecentCases cases={(rawCases ?? []) as unknown as RecentCaseRow[]} />
         </div>
