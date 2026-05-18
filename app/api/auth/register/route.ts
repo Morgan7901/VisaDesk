@@ -1,8 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
-// Initialised once per cold-start; throws at boot if keys are missing so
-// Vercel logs surface the misconfiguration immediately rather than at call time.
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
@@ -21,8 +19,13 @@ function getAdminClient() {
   });
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function POST(request: Request) {
   let userId: string | null = null;
+  let firmId: string | null = null;
 
   try {
     const admin = getAdminClient();
@@ -46,7 +49,7 @@ export async function POST(request: Request) {
       });
 
     if (authError || !authData.user) {
-      console.error("[register] auth.admin.createUser failed:", authError);
+      console.error("[register] step 1 failed — auth.admin.createUser:", authError);
       return NextResponse.json(
         { error: authError?.message ?? "Could not create account." },
         { status: 400 }
@@ -72,15 +75,59 @@ export async function POST(request: Request) {
       );
     }
 
-    console.error("[register] step 2 done — firm created:", firm.id);
+    firmId = firm.id;
+    console.error("[register] step 2 done — firm created:", firmId);
 
-    // 3. Update the profile row created by the trigger in migration 006
+    // 3. Wait for the auth trigger to create the profile row, then update it.
+    //    The trigger runs asynchronously so the row may not exist immediately.
+    const MAX_ATTEMPTS = 5;
+    const RETRY_MS = 500;
+    let profileExists = false;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const { data: existing } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (existing) {
+        profileExists = true;
+        console.error(
+          `[register] step 3 — profile row found on attempt ${attempt}`
+        );
+        break;
+      }
+
+      console.error(
+        `[register] step 3 — profile row not yet present, attempt ${attempt}/${MAX_ATTEMPTS}, waiting ${RETRY_MS}ms`
+      );
+      await sleep(RETRY_MS);
+    }
+
+    if (!profileExists) {
+      console.error(
+        "[register] step 3 failed — profile row never appeared after",
+        MAX_ATTEMPTS,
+        "attempts; rolling back"
+      );
+      await admin.auth.admin.deleteUser(userId);
+      await admin.from("firms").delete().eq("id", firmId);
+      return NextResponse.json(
+        {
+          error:
+            "Account setup timed out waiting for profile row. Please try again.",
+        },
+        { status: 500 }
+      );
+    }
+
     const { error: profileError } = await admin
       .from("profiles")
       .update({
         full_name,
         mara_number: mara_number ?? null,
-        firm_id: firm.id,
+        firm_id: firmId,
         role: "firm_admin",
       })
       .eq("id", userId);
@@ -88,6 +135,7 @@ export async function POST(request: Request) {
     if (profileError) {
       console.error("[register] step 3 failed — profile update:", profileError);
       await admin.auth.admin.deleteUser(userId);
+      await admin.from("firms").delete().eq("id", firmId);
       return NextResponse.json(
         { error: profileError.message },
         { status: 500 }
@@ -99,10 +147,9 @@ export async function POST(request: Request) {
     // 4. Create the trust account for the new firm
     const { error: trustError } = await admin
       .from("trust_accounts")
-      .insert({ firm_id: firm.id, balance: 0 });
+      .insert({ firm_id: firmId, balance: 0 });
 
     if (trustError) {
-      // Non-fatal — firm and profile are set up; log but do not roll back
       console.error(
         "[register] step 4 warning — trust_account insert failed:",
         trustError
@@ -110,20 +157,24 @@ export async function POST(request: Request) {
     } else {
       console.error(
         "[register] step 4 done — trust_account created for firm:",
-        firm.id
+        firmId
       );
     }
 
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("[register] unexpected error:", err);
-    if (userId) {
-      try {
-        const admin = getAdminClient();
-        await admin.auth.admin.deleteUser(userId);
-      } catch {
-        console.error("[register] rollback failed — could not delete auth user:", userId);
-      }
+    try {
+      const admin = getAdminClient();
+      if (userId) await admin.auth.admin.deleteUser(userId);
+      if (firmId) await admin.from("firms").delete().eq("id", firmId);
+    } catch {
+      console.error(
+        "[register] rollback failed — manual cleanup may be needed for userId:",
+        userId,
+        "firmId:",
+        firmId
+      );
     }
     return NextResponse.json(
       { error: "An unexpected error occurred." },
