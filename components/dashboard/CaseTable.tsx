@@ -166,54 +166,41 @@ export function CaseTable({ cases }: CaseTableProps) {
                 {filtered.map((c) => (
                   <tr
                     key={c.id}
-                    className="group hover:bg-slate-50 transition-colors"
+                    className="group cursor-pointer hover:bg-slate-50 transition-colors"
+                    onClick={() => { window.location.href = `/dashboard/cases/${c.id}`; }}
                   >
-                    <td className="font-mono text-xs text-slate-600 whitespace-nowrap">
-                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
-                        {c.ref_number ?? "—"}
-                      </Link>
+                    <td className="px-5 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">
+                      {c.ref_number ?? "—"}
                     </td>
-                    <td className="font-medium text-slate-800 whitespace-nowrap">
-                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
-                        {c.clients?.full_name ?? "—"}
-                      </Link>
+                    <td className="px-5 py-3 font-medium text-slate-800 whitespace-nowrap">
+                      {c.clients?.full_name ?? "—"}
                     </td>
-                    <td className="whitespace-nowrap">
-                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
-                        <span className="inline-block bg-[#0f172a] px-2 py-0.5 text-xs font-medium text-white">
-                          SC-{c.visa_subclass}
-                        </span>
-                      </Link>
+                    <td className="px-5 py-3 whitespace-nowrap">
+                      <span className="inline-block bg-[#0f172a] px-2 py-0.5 text-xs font-medium text-white">
+                        SC-{c.visa_subclass}
+                      </span>
                     </td>
-                    <td className="whitespace-nowrap">
-                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
-                        <StatusBadge status={c.status} />
-                      </Link>
+                    <td className="px-5 py-3 whitespace-nowrap">
+                      <StatusBadge status={c.status} />
                     </td>
-                    <td className="text-xs text-slate-500 max-w-[160px] truncate">
-                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3 truncate">
-                        {c.current_stage_label ?? "—"}
-                      </Link>
+                    <td className="px-5 py-3 text-xs text-slate-500 max-w-[160px] truncate">
+                      {c.current_stage_label ?? "—"}
                     </td>
-                    <td className="text-xs text-slate-500 whitespace-nowrap">
-                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
-                        {c.agent?.full_name ?? "—"}
-                      </Link>
+                    <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
+                      {c.agent?.full_name ?? "—"}
                     </td>
-                    <td className="text-xs text-slate-400 whitespace-nowrap">
-                      <Link href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
-                        {formatDistanceToNow(parseISO(c.created_at), {
-                          addSuffix: true,
-                        })}
-                      </Link>
+                    <td className="px-5 py-3 text-xs text-slate-400 whitespace-nowrap">
+                      {formatDistanceToNow(parseISO(c.created_at), {
+                        addSuffix: true,
+                      })}
                     </td>
-                    <td className="pr-4 text-right whitespace-nowrap">
-                      <Link
+                    <td className="pr-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <a
                         href={`/dashboard/cases/${c.id}`}
                         className="inline-flex items-center gap-1 border border-slate-200 px-2.5 py-1 text-xs text-slate-500 opacity-0 group-hover:opacity-100 hover:border-slate-300 hover:text-slate-700 transition-all"
                       >
                         View <ArrowRight className="h-3 w-3" />
-                      </Link>
+                      </a>
                     </td>
                   </tr>
                 ))}
