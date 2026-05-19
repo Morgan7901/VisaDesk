@@ -352,17 +352,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-slate-50 pb-3 last:border-0">
-      <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-slate-400">
-        {label}
-      </span>
-      <span className="text-sm text-slate-800">{value ?? "—"}</span>
-    </div>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function SponsorPortal({ data }: { data: SponsorPortalData }) {
