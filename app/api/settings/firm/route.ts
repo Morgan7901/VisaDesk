@@ -20,10 +20,15 @@ export async function PATCH(request: Request) {
   }
 
   const body = await request.json();
+  console.log("[PATCH /api/settings/firm] body received:", JSON.stringify(body));
+  console.log("[PATCH /api/settings/firm] updating firm_id:", profile.firm_id);
+
   const updates: Record<string, unknown> = {};
   for (const field of ALLOWED_FIELDS) {
     if (field in body) updates[field] = body[field] ?? null;
   }
+
+  console.log("[PATCH /api/settings/firm] computed updates:", JSON.stringify(updates));
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "No valid fields provided." }, { status: 400 });
@@ -37,8 +42,10 @@ export async function PATCH(request: Request) {
     .single();
 
   if (error || !firm) {
+    console.error("[PATCH /api/settings/firm] Supabase error:", error);
     return NextResponse.json({ error: error?.message ?? "Update failed." }, { status: 500 });
   }
 
+  console.log("[PATCH /api/settings/firm] Supabase returned:", JSON.stringify(firm));
   return NextResponse.json({ firm });
 }

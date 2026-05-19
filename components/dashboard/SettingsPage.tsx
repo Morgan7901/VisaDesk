@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Building2,
   User,
@@ -142,7 +142,13 @@ function FormRow({ label, children, hint }: { label: string; children: React.Rea
 
 // ─── Firm Settings ───────────────────────────────────────────────────────────────
 
-function FirmSettingsForm({ initialFirm }: { initialFirm: FirmData | null }) {
+function FirmSettingsForm({
+  initialFirm,
+  onSaved,
+}: {
+  initialFirm: FirmData | null;
+  onSaved?: (updated: FirmData) => void;
+}) {
   const [firm, setFirm] = useState<FirmData>(
     initialFirm ?? {
       id: "",
@@ -185,7 +191,10 @@ function FirmSettingsForm({ initialFirm }: { initialFirm: FirmData | null }) {
     });
     const json = await res.json().catch(() => ({}));
     if (res.ok) {
-      setFirm((f) => ({ ...f, ...json.firm }));
+      // Update local form state with what the DB returned
+      setFirm(json.firm);
+      // Bubble up to parent so remounting this form gets the latest saved value
+      onSaved?.(json.firm);
       showToast("Firm settings saved.", "success");
     } else {
       showToast(json.error ?? "Save failed.", "error");
@@ -314,8 +323,14 @@ function FirmSettingsForm({ initialFirm }: { initialFirm: FirmData | null }) {
 
 // ─── My Profile ──────────────────────────────────────────────────────────────────
 
-function ProfileForm({ initialProfile }: { initialProfile: ProfileData }) {
-  const [prof, setProf]   = useState(initialProfile);
+function ProfileForm({
+  initialProfile,
+  onSaved,
+}: {
+  initialProfile: ProfileData;
+  onSaved?: (updated: ProfileData) => void;
+}) {
+  const [prof, setProf] = useState(initialProfile);
   const [saving, setSaving] = useState(false);
   const [toast, setToast]   = useState<{ message: string; type: "success" | "error" } | null>(null);
 
@@ -355,7 +370,10 @@ function ProfileForm({ initialProfile }: { initialProfile: ProfileData }) {
     });
     const json = await res.json().catch(() => ({}));
     if (res.ok) {
+      // Update local form state with what the DB returned
       setProf((p) => ({ ...p, ...json.profile }));
+      // Bubble up to parent so remounting this form gets the latest saved value
+      onSaved?.({ ...prof, ...json.profile });
       showToast("Profile saved.", "success");
     } else {
       showToast(json.error ?? "Save failed.", "error");
@@ -798,9 +816,11 @@ function WorkflowEditModal({
 function WorkflowTemplatesSection({
   initialTemplates,
   globalTemplates,
+  onTemplatesChange,
 }: {
   initialTemplates: WorkflowTemplate[];
   globalTemplates: GlobalTemplate[];
+  onTemplatesChange?: (templates: WorkflowTemplate[]) => void;
 }) {
   const [templates, setTemplates]   = useState(initialTemplates);
   const [globals, setGlobals]       = useState(globalTemplates);
@@ -822,16 +842,22 @@ function WorkflowTemplatesSection({
       setCloneError(json.error ?? "Clone failed.");
       return;
     }
-    setTemplates((prev) => [...prev, json.template].sort((a, b) =>
-      a.visa_subclass.localeCompare(b.visa_subclass)
-    ));
+    setTemplates((prev) => {
+      const next = [...prev, json.template].sort((a, b) =>
+        a.visa_subclass.localeCompare(b.visa_subclass)
+      );
+      onTemplatesChange?.(next);
+      return next;
+    });
     setGlobals((prev) => prev.filter((g) => g.visa_subclass !== subclass));
   };
 
   const handleSaved = (updated: WorkflowTemplate) => {
-    setTemplates((prev) =>
-      prev.map((t) => (t.id === updated.id ? updated : t))
-    );
+    setTemplates((prev) => {
+      const next = prev.map((t) => (t.id === updated.id ? updated : t));
+      onTemplatesChange?.(next);
+      return next;
+    });
   };
 
   return (
@@ -954,13 +980,15 @@ export function SettingsPage({
 }: Props) {
   const [section, setSection] = useState<Section>("firm");
 
-  // Stable refs to avoid re-creating child state on section switch
-  const firmRef          = useRef(firm);
-  const profileRef       = useRef(profile);
-  const templatesRef     = useRef(templates);
-  const globalsRef       = useRef(globalTemplates);
-  const teamMembersRef   = useRef(teamMembers);
-  const invitationsRef   = useRef(pendingInvitations);
+  // useState (not useRef) so that saved values persist across tab switches.
+  // When a child form saves successfully it calls onSaved which updates these,
+  // so the next time the form mounts it starts with the freshly saved values.
+  const [firmData, setFirmData]           = useState(firm);
+  const [profileData, setProfileData]     = useState(profile);
+  const [templatesData, setTemplatesData] = useState(templates);
+  const [globalsData]                     = useState(globalTemplates);
+  const [teamMembersData]                 = useState(teamMembers);
+  const [invitationsData]                 = useState(pendingInvitations);
 
   const navItems = BASE_NAV.filter((item) => item.id !== "team" || showTeam);
 
@@ -993,22 +1021,29 @@ export function SettingsPage({
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-8 py-6">
         {section === "firm" && (
-          <FirmSettingsForm initialFirm={firmRef.current} />
+          <FirmSettingsForm
+            initialFirm={firmData}
+            onSaved={setFirmData}
+          />
         )}
         {section === "profile" && (
-          <ProfileForm initialProfile={profileRef.current} />
+          <ProfileForm
+            initialProfile={profileData}
+            onSaved={setProfileData}
+          />
         )}
         {section === "workflow" && (
           <WorkflowTemplatesSection
-            initialTemplates={templatesRef.current}
-            globalTemplates={globalsRef.current}
+            initialTemplates={templatesData}
+            globalTemplates={globalsData}
+            onTemplatesChange={setTemplatesData}
           />
         )}
         {section === "team" && showTeam && (
           <TeamSettings
-            initialMembers={teamMembersRef.current}
-            initialInvitations={invitationsRef.current}
-            currentUserId={profileRef.current.id}
+            initialMembers={teamMembersData}
+            initialInvitations={invitationsData}
+            currentUserId={profileData.id}
           />
         )}
       </div>
