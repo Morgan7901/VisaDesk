@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { createClient } from "@/lib/supabase/client";
 import {
   CheckCircle2,
   Circle,
@@ -63,28 +64,58 @@ export function WorkflowEngine({ caseId, visaSubclass }: Props) {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
   }, []);
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setFetchError(null);
-      const res = await fetch(`/api/cases/${caseId}/workflow`);
-      if (!res.ok) {
-        setFetchError("Failed to load workflow.");
-        setLoading(false);
-        return;
-      }
-      const { stages: data } = (await res.json()) as { stages: WorkflowStage[] };
-      setStages(data);
+  // Track whether initial open-stage has been set so realtime refreshes
+  // don't collapse the panel the agent currently has open.
+  const initialOpenSet = useRef(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setFetchError(null);
+    const res = await fetch(`/api/cases/${caseId}/workflow`);
+    if (!res.ok) {
+      setFetchError("Failed to load workflow.");
+      setLoading(false);
+      return;
+    }
+    const { stages: data } = (await res.json()) as { stages: WorkflowStage[] };
+    setStages(data);
+    // Only auto-open on first load; realtime refreshes preserve the current open state
+    if (!initialOpenSet.current) {
       const firstIncomplete = data.find((s) => !s.is_complete);
       if (firstIncomplete) {
         setOpenStages(new Set([firstIncomplete.stage_id]));
       } else if (data.length > 0) {
         setOpenStages(new Set([data[data.length - 1].stage_id]));
       }
-      setLoading(false);
+      initialOpenSet.current = true;
     }
-    load();
+    setLoading(false);
   }, [caseId]);
+
+  // Initial load
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Real-time: refetch whenever task or stage progress changes for this case
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`workflow-${caseId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "case_task_progress", filter: `case_id=eq.${caseId}` },
+        () => { load(); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "case_stage_progress", filter: `case_id=eq.${caseId}` },
+        () => { load(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [caseId, load]);
 
   function toggleStageOpen(stageId: string) {
     setOpenStages((prev) => {

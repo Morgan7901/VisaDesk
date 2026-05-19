@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { format, parseISO, differenceInCalendarDays } from "date-fns";
 import { Plus, CalendarX, Trash2, CheckCheck, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -403,6 +405,7 @@ function Group({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function DeadlinesPage({ deadlines: initial, cases }: Props) {
+  const router = useRouter();
   const [deadlines, setDeadlines] = useState<DeadlineItem[]>(initial);
   const [view, setView] = useState<"upcoming" | "completed">("upcoming");
   const [typeFilter, setTypeFilter] = useState("");
@@ -411,6 +414,45 @@ export function DeadlinesPage({ deadlines: initial, cases }: Props) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   void deleting; // used to block UI during delete (future enhancement)
+
+  // ── Real-time subscription ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("deadlines-live")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "deadlines" },
+        (payload: { new: Record<string, unknown> }) => {
+          // Merge updated fields (is_complete, label, etc.) while preserving
+          // joined fields (ref_number, visa_subclass, client_name) from local state.
+          setDeadlines((prev) =>
+            prev.map((d) =>
+              d.id === payload.new.id ? { ...d, ...(payload.new as Partial<DeadlineItem>) } : d
+            )
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "deadlines" },
+        (payload: { old: Record<string, unknown> }) => {
+          setDeadlines((prev) => prev.filter((d) => d.id !== payload.old.id));
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "deadlines" },
+        () => {
+          // INSERT payload lacks joined fields — refresh to get full data from server.
+          router.refresh();
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [router]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 

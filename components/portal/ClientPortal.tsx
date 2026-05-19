@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { format, parseISO } from "date-fns";
 import {
   CheckCircle2,
@@ -112,6 +113,13 @@ function DocRow({
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Sync from parent when the prop changes externally (e.g. agent approves/rejects
+  // the document via realtime update — the parent updates documents state which
+  // flows down as a new doc prop).
+  useEffect(() => {
+    setLocalDoc(doc);
+  }, [doc]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -386,6 +394,42 @@ export function ClientPortal({ data }: { data: ClientPortalData }) {
 
   const updateDoc = (updated: PortalDocument) =>
     setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+
+  // Realtime: watch case_documents for this case so the checklist updates
+  // instantly when the agent approves, rejects, or adds a document.
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`portal-docs-${caseData.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "case_documents",
+          filter: `case_id=eq.${caseData.id}`,
+        },
+        (payload: { new: Record<string, unknown> }) => {
+          const row = payload.new as { id: string; status: string; file_name: string | null; uploaded_at: string | null; review_notes: string | null };
+          setDocuments((prev) =>
+            prev.map((d) =>
+              d.id === row.id
+                ? {
+                    ...d,
+                    status: row.status,
+                    file_name: row.file_name,
+                    uploaded_at: row.uploaded_at,
+                    review_notes: row.review_notes,
+                  }
+                : d
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [caseData.id]);
 
   return (
     <div className="min-h-screen bg-slate-50">
