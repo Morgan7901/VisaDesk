@@ -1,17 +1,12 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { CaseTable } from "@/components/dashboard/CaseTable";
 import type { CaseRow } from "@/components/dashboard/CaseTable";
 
 export const metadata: Metadata = { title: "Cases — VisaDesk" };
 
-const supabaseAdmin = createAdminClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
 
 export default async function CasesPage() {
   // Auth via session client — admin client does not hold session context

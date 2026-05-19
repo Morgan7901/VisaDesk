@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { addDays, startOfMonth, format } from "date-fns";
 import { StatCards } from "@/components/dashboard/StatCards";
 import { DeadlinePanel } from "@/components/dashboard/DeadlinePanel";
@@ -10,11 +10,6 @@ import type { RecentCaseRow } from "@/components/dashboard/RecentCases";
 
 export const metadata = { title: "Dashboard — VisaDesk" };
 
-const supabaseAdmin = createAdminClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
 
 export default async function DashboardPage() {
   // Auth via session client — admin client does not hold session context

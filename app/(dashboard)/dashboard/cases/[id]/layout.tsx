@@ -1,15 +1,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { CaseHeader } from "@/components/cases/CaseHeader";
 import { CaseTabs } from "@/components/cases/CaseTabs";
 import type { CaseDetailData } from "@/components/cases/CaseHeader";
 
-const supabaseAdmin = createAdminClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
 
 export default async function CaseDetailLayout({
   children,

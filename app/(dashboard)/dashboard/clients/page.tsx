@@ -1,17 +1,12 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ClientsPage } from "@/components/dashboard/ClientsPage";
 import type { ClientRow } from "@/components/dashboard/ClientsPage";
 
 export const metadata: Metadata = { title: "Clients — VisaDesk" };
 
-const supabaseAdmin = createAdminClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
 
 export default async function ClientsPageRoute() {
   const sessionClient = await createClient();

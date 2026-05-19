@@ -1,17 +1,12 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { DeadlinesPage } from "@/components/dashboard/DeadlinesPage";
 import type { DeadlineItem, CaseOption } from "@/components/dashboard/DeadlinesPage";
 
 export const metadata: Metadata = { title: "Deadlines — VisaDesk" };
 
-const supabaseAdmin = createAdminClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-);
 
 export default async function DeadlinesPageRoute() {
   const sessionClient = await createClient();
