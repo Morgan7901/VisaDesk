@@ -12,6 +12,9 @@ import {
   AlertCircle,
   GitBranch,
   User,
+  Link2,
+  Copy,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -249,10 +252,177 @@ function StatusDropdown({
   );
 }
 
+// ── Send Portal Invite Modal ──────────────────────────────────
+
+function SendPortalInviteModal({
+  caseData,
+  onClose,
+}: {
+  caseData: CaseDetailData;
+  onClose: () => void;
+}) {
+  const [portalType, setPortalType] = useState<"client" | "sponsor">("client");
+  const [loading, setLoading] = useState(false);
+  const [portalUrl, setPortalUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const hasClient  = !!caseData.clients;
+  const hasSponsor = !!caseData.sponsor;
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handler);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handler);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  const generate = async () => {
+    setLoading(true);
+    setError(null);
+    setPortalUrl(null);
+    setCopied(false);
+
+    const res = await fetch("/api/portal/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ caseId: caseData.id, portalType }),
+    });
+    const json = await res.json().catch(() => ({}));
+
+    if (res.ok && json.portalUrl) {
+      setPortalUrl(json.portalUrl);
+    } else {
+      setError(json.error ?? "Failed to generate portal link.");
+    }
+    setLoading(false);
+  };
+
+  const copy = async () => {
+    if (!portalUrl) return;
+    await navigator.clipboard.writeText(portalUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <h3 className="text-sm font-semibold text-slate-900">Send Portal Invite</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          {error && (
+            <div className="flex items-start gap-2 border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {error}
+            </div>
+          )}
+
+          {/* Portal type selector */}
+          <div>
+            <p className="mb-2 text-xs font-medium text-slate-700">Which portal?</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setPortalType("client"); setPortalUrl(null); }}
+                disabled={!hasClient}
+                className={cn(
+                  "flex-1 border px-4 py-2.5 text-sm font-medium transition-colors",
+                  portalType === "client"
+                    ? "border-[#0f172a] bg-[#0f172a] text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                  !hasClient && "cursor-not-allowed opacity-40"
+                )}
+              >
+                <User className="mx-auto mb-1 h-4 w-4" />
+                Client Portal
+              </button>
+              <button
+                onClick={() => { setPortalType("sponsor"); setPortalUrl(null); }}
+                disabled={!hasSponsor}
+                className={cn(
+                  "flex-1 border px-4 py-2.5 text-sm font-medium transition-colors",
+                  portalType === "sponsor"
+                    ? "border-[#0f172a] bg-[#0f172a] text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
+                  !hasSponsor && "cursor-not-allowed opacity-40"
+                )}
+              >
+                <Link2 className="mx-auto mb-1 h-4 w-4" />
+                Sponsor Portal
+              </button>
+            </div>
+            {!hasClient && portalType === "client" && (
+              <p className="mt-1.5 text-xs text-amber-600">No client linked to this case.</p>
+            )}
+            {!hasSponsor && portalType === "sponsor" && (
+              <p className="mt-1.5 text-xs text-amber-600">No sponsor linked to this case.</p>
+            )}
+          </div>
+
+          {/* Generated URL */}
+          {portalUrl && (
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-slate-700">Portal link</p>
+              <div className="flex items-center gap-2 border border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-slate-700">
+                  {portalUrl}
+                </span>
+                <button
+                  onClick={copy}
+                  className="shrink-0 text-slate-400 hover:text-slate-700"
+                  title="Copy link"
+                >
+                  {copied ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+              <p className="mt-1.5 text-xs text-slate-400">
+                {copied ? "Copied!" : "Copy and share this link with your client."}{" "}
+                Keep it private — anyone with this link can access the portal.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-slate-200 px-5 py-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-sm text-slate-600 hover:text-slate-800"
+          >
+            Close
+          </button>
+          <button
+            onClick={generate}
+            disabled={loading || (portalType === "client" && !hasClient) || (portalType === "sponsor" && !hasSponsor)}
+            className="flex items-center gap-2 bg-[#0f172a] px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60 transition-colors"
+          >
+            {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {portalUrl ? "Regenerate Link" : "Generate Link"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActionsDropdown({
   onAddDeadline,
+  onPortalInvite,
 }: {
   onAddDeadline: () => void;
+  onPortalInvite: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -285,10 +455,10 @@ function ActionsDropdown({
             Add Deadline
           </button>
           <button
-            onClick={() => { setOpen(false); alert("Portal invite — coming soon."); }}
+            onClick={() => { setOpen(false); onPortalInvite(); }}
             className="flex w-full items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
           >
-            <User className="h-4 w-4 text-slate-400" />
+            <Link2 className="h-4 w-4 text-slate-400" />
             Send Portal Invite
           </button>
         </div>
@@ -448,6 +618,7 @@ export function CaseHeader({ caseData }: { caseData: CaseDetailData }) {
     visa_expiry: caseData.visa_expiry,
   });
   const [addDeadlineOpen, setAddDeadlineOpen] = useState(false);
+  const [portalInviteOpen, setPortalInviteOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -491,7 +662,10 @@ export function CaseHeader({ caseData }: { caseData: CaseDetailData }) {
             />
           </div>
 
-          <ActionsDropdown onAddDeadline={() => setAddDeadlineOpen(true)} />
+          <ActionsDropdown
+            onAddDeadline={() => setAddDeadlineOpen(true)}
+            onPortalInvite={() => setPortalInviteOpen(true)}
+          />
         </div>
 
         {/* Row 2: client info + stage + agent */}
@@ -556,6 +730,13 @@ export function CaseHeader({ caseData }: { caseData: CaseDetailData }) {
           caseId={caseData.id}
           onClose={() => setAddDeadlineOpen(false)}
           onSuccess={() => showToast("Deadline added successfully.")}
+        />
+      )}
+
+      {portalInviteOpen && (
+        <SendPortalInviteModal
+          caseData={caseData}
+          onClose={() => setPortalInviteOpen(false)}
         />
       )}
 

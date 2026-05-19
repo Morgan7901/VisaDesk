@@ -34,7 +34,7 @@ export default async function SettingsPageRoute() {
   // Firm details
   const { data: firmRaw } = await supabaseAdmin
     .from("firms")
-    .select("id, name, mara_number, abn, address, phone, email, logo_url, plan")
+    .select("id, name, abn, address, phone, email, logo_url, plan")
     .eq("id", firmId)
     .single();
 
@@ -42,7 +42,6 @@ export default async function SettingsPageRoute() {
     ? {
         id: firmRaw.id,
         name: firmRaw.name,
-        mara_number: firmRaw.mara_number ?? null,
         abn: firmRaw.abn ?? null,
         address: firmRaw.address ?? null,
         phone: firmRaw.phone ?? null,

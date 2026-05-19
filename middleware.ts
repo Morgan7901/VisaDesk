@@ -6,6 +6,11 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  // Portal routes are public — token is the auth mechanism
+  if (pathname.startsWith("/portal")) {
+    return supabaseResponse;
+  }
+
   // Redirect unauthenticated users away from /dashboard routes
   if (pathname.startsWith("/dashboard") && !user) {
     const loginUrl = request.nextUrl.clone();
