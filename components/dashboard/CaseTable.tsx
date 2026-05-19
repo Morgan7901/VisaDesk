@@ -162,7 +162,10 @@ export function CaseTable({ cases }: CaseTableProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((c) => (
+                {filtered.map((c) => {
+                  const href = `/dashboard/cases/${c.id}`;
+                  console.log("[CaseTable] case.id:", c.id, "| href:", href);
+                  return (
                   <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                     <td className="font-mono text-xs text-slate-600 whitespace-nowrap">
                       <a href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
@@ -212,7 +215,8 @@ export function CaseTable({ cases }: CaseTableProps) {
                       </a>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
