@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { WorkflowEngine } from "@/components/cases/WorkflowEngine";
+import { CaseWorkflowTab } from "@/components/cases/CaseWorkflowTab";
 
 const supabaseAdmin = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,6 +31,6 @@ export default async function WorkflowPage({
   if (!caseRow) redirect("/dashboard/cases");
 
   return (
-    <WorkflowEngine caseId={params.id} visaSubclass={caseRow.visa_subclass} />
+    <CaseWorkflowTab caseId={params.id} visaSubclass={caseRow.visa_subclass} />
   );
 }

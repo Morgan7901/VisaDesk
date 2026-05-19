@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { format, parseISO } from "date-fns";
 import {
   ChevronDown,
+  CheckCheck,
   Pencil,
   Plus,
   X,
@@ -251,9 +252,11 @@ function ActionsDropdown({
 function AddDeadlineModal({
   caseId,
   onClose,
+  onSuccess,
 }: {
   caseId: string;
   onClose: () => void;
+  onSuccess: () => void;
 }) {
   const [label, setLabel] = useState("");
   const [deadlineDate, setDeadlineDate] = useState("");
@@ -296,6 +299,7 @@ function AddDeadlineModal({
       setSubmitting(false);
       return;
     }
+    onSuccess();
     onClose();
   };
 
@@ -396,6 +400,12 @@ export function CaseHeader({ caseData }: { caseData: CaseDetailData }) {
     visa_expiry: caseData.visa_expiry,
   });
   const [addDeadlineOpen, setAddDeadlineOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
 
   const saveField = async (
     key: keyof typeof fields,
@@ -497,7 +507,16 @@ export function CaseHeader({ caseData }: { caseData: CaseDetailData }) {
         <AddDeadlineModal
           caseId={caseData.id}
           onClose={() => setAddDeadlineOpen(false)}
+          onSuccess={() => showToast("Deadline added successfully.")}
         />
+      )}
+
+      {/* Success toast */}
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2 bg-[#0f172a] px-4 py-2.5 text-sm font-medium text-white shadow-lg animate-in fade-in slide-in-from-bottom-2">
+          <CheckCheck className="h-4 w-4 text-green-400" />
+          {toast}
+        </div>
       )}
     </>
   );
