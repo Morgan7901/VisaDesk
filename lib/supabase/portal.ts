@@ -312,34 +312,32 @@ async function getPortalDocuments(
   caseId: string,
   portalType: PortalType
 ): Promise<PortalDocument[]> {
+  // Filter on portal_upload stored directly on the case_document row (denormalised from
+  // document_types at insert time). Also join document_types for is_required — use the
+  // plain table name without an FK hint so PostgREST resolves it unambiguously.
   const { data: docs } = await supabaseAdmin
     .from("case_documents")
     .select(
-      "id, label, status, file_name, uploaded_at, review_notes, document_types!document_type_id(is_required, portal_upload)"
+      "id, label, status, file_name, uploaded_at, review_notes, document_types(is_required)"
     )
-    .eq("case_id", caseId);
+    .eq("case_id", caseId)
+    .eq("portal_upload", portalType);
 
   if (!docs) return [];
 
-  return docs
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((d: any) => {
-      const dt = Array.isArray(d.document_types) ? d.document_types[0] : d.document_types;
-      return dt?.portal_upload === portalType;
-    })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((d: any) => {
-      const dt = Array.isArray(d.document_types) ? d.document_types[0] : d.document_types;
-      return {
-        id: d.id,
-        label: d.label,
-        is_required: dt?.is_required ?? true,
-        status: d.status ?? "pending",
-        file_name: d.file_name ?? null,
-        uploaded_at: d.uploaded_at ?? null,
-        review_notes: d.review_notes ?? null,
-      };
-    });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return docs.map((d: any) => {
+    const dt = Array.isArray(d.document_types) ? d.document_types[0] : d.document_types;
+    return {
+      id: d.id,
+      label: d.label,
+      is_required: dt?.is_required ?? true,
+      status: d.status ?? "pending",
+      file_name: d.file_name ?? null,
+      uploaded_at: d.uploaded_at ?? null,
+      review_notes: d.review_notes ?? null,
+    };
+  });
 }
 
 async function getPortalMessages(caseId: string): Promise<PortalMessage[]> {

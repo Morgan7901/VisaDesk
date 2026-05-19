@@ -64,7 +64,8 @@ export async function POST(request: Request) {
     );
   }
 
-  // Create the case_documents row
+  // Create the case_documents row — store portal_upload directly so the portal
+  // can filter on it without a FK join
   const { data: doc, error: docErr } = await supabaseAdmin
     .from("case_documents")
     .insert({
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
       document_type_id: docType.id,
       label: label.trim(),
       status: "pending",
+      portal_upload: portal_upload || null,
     })
     .select("id")
     .single();

@@ -67,6 +67,7 @@ export async function POST(
       document_type_id: dt.id,
       label: dt.label,
       status: "pending",
+      portal_upload: dt.portal_upload ?? null, // denormalised so portal can filter directly
     }));
 
   if (toInsert.length === 0) {
