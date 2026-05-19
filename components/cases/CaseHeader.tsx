@@ -47,7 +47,8 @@ export interface CaseDetailData {
 
 // ── Constants ─────────────────────────────────────────────────
 
-const STATUSES = ["active", "submitted", "granted", "refused", "withdrawn"] as const;
+// STATUSES kept for reference — dropdown uses explicit lists per section
+// const STATUSES = ["active", "submitted", "granted", "refused", "withdrawn"] as const;
 
 const STATUS_STYLES: Record<string, { badge: string }> = {
   active:    { badge: "bg-blue-50 text-blue-700 border-blue-200" },
@@ -162,9 +163,6 @@ function StatusDropdown({
 
   const styles = STATUS_STYLES[status] ?? STATUS_STYLES.active;
 
-  // Statuses that represent a DHA decision — shown more prominently in the dropdown
-  const dhaDecision = new Set(["granted", "refused"]);
-
   return (
     <div ref={ref} className="relative">
       <button
@@ -181,44 +179,53 @@ function StatusDropdown({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1.5 w-48 border border-slate-200 bg-white shadow-xl overflow-hidden">
-          {/* DHA decision section — most important actions for agents */}
-          <div className="border-b border-slate-100 px-3 py-1.5">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+        <div className="absolute left-0 top-full z-20 mt-1.5 w-52 border border-slate-200 bg-white shadow-xl overflow-hidden">
+
+          {/* ── DHA Decision ─────────────────────────────────── */}
+          <div className="bg-slate-50 border-b border-slate-200 px-3 py-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
               DHA Decision
             </p>
           </div>
-          {(["granted", "refused"] as const).map((s) => {
-            const st = STATUS_STYLES[s];
-            const isActive = s === status;
-            return (
-              <button
-                key={s}
-                onClick={() => change(s)}
-                disabled={isActive}
-                className={cn(
-                  "flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-semibold capitalize transition-colors",
-                  s === "granted"
-                    ? "hover:bg-green-50 text-green-700"
-                    : "hover:bg-red-50 text-red-700",
-                  isActive ? "opacity-40 cursor-default" : "cursor-pointer"
-                )}
-              >
-                <span className={cn("h-2.5 w-2.5 rounded-full border-2", st.badge)} />
-                Mark {s.charAt(0).toUpperCase() + s.slice(1)}
-                {isActive && <span className="ml-auto text-xs font-normal opacity-60">current</span>}
-              </button>
-            );
-          })}
 
-          {/* Other statuses */}
-          <div className="border-t border-slate-100 px-3 py-1.5 mt-0.5">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+          <button
+            onClick={() => change("granted")}
+            disabled={status === "granted"}
+            className={cn(
+              "flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-green-700 hover:bg-green-50 transition-colors",
+              status === "granted" ? "opacity-40 cursor-default" : "cursor-pointer"
+            )}
+          >
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-green-500" />
+            Mark Granted
+            {status === "granted" && <span className="ml-auto text-xs font-normal text-slate-400">current</span>}
+          </button>
+
+          <button
+            onClick={() => change("refused")}
+            disabled={status === "refused"}
+            className={cn(
+              "flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 transition-colors",
+              status === "refused" ? "opacity-40 cursor-default" : "cursor-pointer"
+            )}
+          >
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-500" />
+            Mark Refused
+            {status === "refused" && <span className="ml-auto text-xs font-normal text-slate-400">current</span>}
+          </button>
+
+          {/* ── Case Status ───────────────────────────────────── */}
+          <div className="bg-slate-50 border-y border-slate-200 px-3 py-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
               Case Status
             </p>
           </div>
-          {STATUSES.filter((s) => !dhaDecision.has(s)).map((s) => {
-            const st = STATUS_STYLES[s] ?? STATUS_STYLES.active;
+
+          {(["active", "submitted", "withdrawn"] as const).map((s) => {
+            const dotColor =
+              s === "active"    ? "bg-blue-500" :
+              s === "submitted" ? "bg-amber-500" :
+                                  "bg-slate-400";
             const isActive = s === status;
             return (
               <button
@@ -226,13 +233,13 @@ function StatusDropdown({
                 onClick={() => change(s)}
                 disabled={isActive}
                 className={cn(
-                  "flex w-full items-center gap-2.5 px-3 py-2 text-xs font-medium capitalize hover:bg-slate-50 transition-colors",
-                  isActive ? "opacity-40 cursor-default" : "cursor-pointer"
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-sm font-medium capitalize text-slate-800 hover:bg-slate-50 transition-colors",
+                  isActive ? "opacity-50 cursor-default" : "cursor-pointer"
                 )}
               >
-                <span className={cn("h-2 w-2 rounded-full border", st.badge)} />
+                <span className={cn("h-2 w-2 shrink-0 rounded-full", dotColor)} />
                 {s}
-                {isActive && <span className="ml-auto text-xs font-normal opacity-60">current</span>}
+                {isActive && <span className="ml-auto text-xs font-normal text-slate-400">current</span>}
               </button>
             );
           })}
