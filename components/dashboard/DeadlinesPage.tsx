@@ -162,15 +162,15 @@ function NewDeadlineModal({
         deadline_type: deadlineType,
       }),
     });
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
       setError(json.error ?? "Failed to create deadline.");
       setSaving(false);
       return;
     }
-    // Optimistically return a new item — no id from server, use temp
+    // Use the real id returned by the API so Done/Delete work immediately
     onCreated({
-      id: `temp-${Date.now()}`,
+      id: json.deadline.id,
       label,
       deadline_date: deadlineDate,
       deadline_type: deadlineType,

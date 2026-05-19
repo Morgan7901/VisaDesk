@@ -38,16 +38,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const { error } = await supabaseAdmin.from("deadlines").insert({
-    case_id: caseId,
-    firm_id: profile.firm_id,
-    label,
-    deadline_date,
-    deadline_type: deadline_type ?? null,
-    is_complete: false,
-  });
+  const { data: deadline, error } = await supabaseAdmin
+    .from("deadlines")
+    .insert({
+      case_id: caseId,
+      firm_id: profile.firm_id,
+      label,
+      deadline_date,
+      deadline_type: deadline_type ?? null,
+      is_complete: false,
+    })
+    .select("id, label, deadline_date, deadline_type, is_complete, case_id")
+    .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error || !deadline) {
+    return NextResponse.json({ error: error?.message ?? "Insert failed." }, { status: 500 });
+  }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ deadline });
 }
