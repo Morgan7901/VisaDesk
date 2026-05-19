@@ -14,23 +14,25 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { canAccess } from "@/lib/permissions";
 
-const NAV = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { label: "Cases",     icon: Briefcase,       href: "/dashboard/cases" },
-  { label: "Pipeline",  icon: GitBranch,       href: "/dashboard/pipeline" },
-  { label: "Deadlines", icon: CalendarClock,   href: "/dashboard/deadlines" },
-  { label: "Clients",   icon: Users,           href: "/dashboard/clients" },
-  { label: "Trust",     icon: Landmark,        href: "/dashboard/trust" },
-  { label: "Settings",  icon: Settings,        href: "/dashboard/settings" },
+const ALL_NAV = [
+  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard",          resource: null },
+  { label: "Cases",     icon: Briefcase,       href: "/dashboard/cases",    resource: null },
+  { label: "Pipeline",  icon: GitBranch,       href: "/dashboard/pipeline", resource: "pipeline" as const },
+  { label: "Deadlines", icon: CalendarClock,   href: "/dashboard/deadlines",resource: null },
+  { label: "Clients",   icon: Users,           href: "/dashboard/clients",  resource: null },
+  { label: "Trust",     icon: Landmark,        href: "/dashboard/trust",    resource: "trust" as const },
+  { label: "Settings",  icon: Settings,        href: "/dashboard/settings", resource: "settings" as const },
 ];
 
 interface SidebarProps {
   userName: string;
   userEmail: string;
+  role: string;
 }
 
-export function Sidebar({ userName, userEmail }: SidebarProps) {
+export function Sidebar({ userName, userEmail, role }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -45,6 +47,11 @@ export function Sidebar({ userName, userEmail }: SidebarProps) {
     router.push("/login");
   };
 
+  const visibleNav = ALL_NAV.filter(({ resource }) => {
+    if (!resource) return true;
+    return canAccess(role, resource, "view");
+  });
+
   return (
     <aside className="flex w-60 shrink-0 flex-col bg-[#0f172a]">
       {/* Logo */}
@@ -56,7 +63,7 @@ export function Sidebar({ userName, userEmail }: SidebarProps) {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
-        {NAV.map(({ label, icon: Icon, href }) => (
+        {visibleNav.map(({ label, icon: Icon, href }) => (
           <Link
             key={href}
             href={href}
@@ -76,9 +83,16 @@ export function Sidebar({ userName, userEmail }: SidebarProps) {
       {/* User footer */}
       <div className="border-t border-slate-800 px-4 py-4">
         <div className="mb-3 min-w-0">
-          <p className="truncate text-sm font-medium text-slate-200">
-            {userName || "Agent"}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-medium text-slate-200">
+              {userName || "Agent"}
+            </p>
+            {role !== "firm_admin" && (
+              <span className="shrink-0 rounded-sm bg-slate-700 px-1.5 py-0.5 text-[10px] font-medium capitalize text-slate-300">
+                {role}
+              </span>
+            )}
+          </div>
           <p className="truncate text-xs text-slate-500">{userEmail}</p>
         </div>
         <button

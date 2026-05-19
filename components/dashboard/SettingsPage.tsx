@@ -5,6 +5,7 @@ import {
   Building2,
   User,
   GitBranch,
+  Users,
   Save,
   Lock,
   Eye,
@@ -20,6 +21,11 @@ import {
   Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  TeamSettings,
+  type TeamMember,
+  type PendingInvitation,
+} from "@/components/settings/TeamSettings";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -78,9 +84,12 @@ interface Props {
   profile: ProfileData;
   templates: WorkflowTemplate[];
   globalTemplates: GlobalTemplate[];
+  teamMembers?: TeamMember[];
+  pendingInvitations?: PendingInvitation[];
+  showTeam?: boolean;
 }
 
-type Section = "firm" | "profile" | "workflow";
+type Section = "firm" | "profile" | "workflow" | "team";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -925,22 +934,35 @@ function WorkflowTemplatesSection({
 
 // ─── Sidebar Nav ─────────────────────────────────────────────────────────────────
 
-const NAV_ITEMS: { id: Section; label: string; icon: React.ReactNode }[] = [
-  { id: "firm",     label: "Firm Settings",       icon: <Building2 className="h-4 w-4" /> },
-  { id: "profile",  label: "My Profile",           icon: <User className="h-4 w-4" /> },
-  { id: "workflow", label: "Workflow Templates",   icon: <GitBranch className="h-4 w-4" /> },
+const BASE_NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
+  { id: "firm",     label: "Firm Settings",     icon: <Building2 className="h-4 w-4" /> },
+  { id: "profile",  label: "My Profile",         icon: <User className="h-4 w-4" /> },
+  { id: "workflow", label: "Workflow Templates", icon: <GitBranch className="h-4 w-4" /> },
+  { id: "team",     label: "Team",               icon: <Users className="h-4 w-4" /> },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────────
 
-export function SettingsPage({ firm, profile, templates, globalTemplates }: Props) {
+export function SettingsPage({
+  firm,
+  profile,
+  templates,
+  globalTemplates,
+  teamMembers = [],
+  pendingInvitations = [],
+  showTeam = false,
+}: Props) {
   const [section, setSection] = useState<Section>("firm");
 
   // Stable refs to avoid re-creating child state on section switch
-  const firmRef     = useRef(firm);
-  const profileRef  = useRef(profile);
-  const templatesRef = useRef(templates);
-  const globalsRef   = useRef(globalTemplates);
+  const firmRef          = useRef(firm);
+  const profileRef       = useRef(profile);
+  const templatesRef     = useRef(templates);
+  const globalsRef       = useRef(globalTemplates);
+  const teamMembersRef   = useRef(teamMembers);
+  const invitationsRef   = useRef(pendingInvitations);
+
+  const navItems = BASE_NAV.filter((item) => item.id !== "team" || showTeam);
 
   return (
     <div className="flex min-h-full gap-0 -mx-6 -mt-6">
@@ -950,7 +972,7 @@ export function SettingsPage({ firm, profile, templates, globalTemplates }: Prop
           Settings
         </p>
         <nav className="space-y-0.5 px-2">
-          {NAV_ITEMS.map(({ id, label, icon }) => (
+          {navItems.map(({ id, label, icon }) => (
             <button
               key={id}
               onClick={() => setSection(id)}
@@ -980,6 +1002,13 @@ export function SettingsPage({ firm, profile, templates, globalTemplates }: Prop
           <WorkflowTemplatesSection
             initialTemplates={templatesRef.current}
             globalTemplates={globalsRef.current}
+          />
+        )}
+        {section === "team" && showTeam && (
+          <TeamSettings
+            initialMembers={teamMembersRef.current}
+            initialInvitations={invitationsRef.current}
+            currentUserId={profileRef.current.id}
           />
         )}
       </div>

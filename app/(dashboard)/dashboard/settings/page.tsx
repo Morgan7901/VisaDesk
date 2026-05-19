@@ -9,6 +9,7 @@ import type {
   WorkflowTemplate,
   GlobalTemplate,
 } from "@/components/dashboard/SettingsPage";
+import type { TeamMember, PendingInvitation } from "@/components/settings/TeamSettings";
 
 export const metadata: Metadata = { title: "Settings — VisaDesk" };
 
@@ -21,13 +22,14 @@ export default async function SettingsPageRoute() {
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("id, firm_id, full_name, email, phone, mara_number, avatar_url")
+    .select("id, firm_id, role, full_name, email, phone, mara_number, avatar_url")
     .eq("id", user.id)
     .single();
 
   if (!profile?.firm_id) redirect("/login");
 
   const firmId: string = profile.firm_id;
+  const isFirmAdmin = profile.role === "firm_admin";
 
   // Firm details
   const { data: firmRaw } = await supabaseAdmin
@@ -122,12 +124,52 @@ export default async function SettingsPageRoute() {
     .filter((t) => !firmSubclasses.has(t.visa_subclass))
     .map((t) => ({ visa_subclass: t.visa_subclass, label: t.label }));
 
+  // Team data — only fetched for firm admins
+  let teamMembers: TeamMember[] = [];
+  let pendingInvitations: PendingInvitation[] = [];
+
+  if (isFirmAdmin) {
+    const { data: rawMembers } = await supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, email, role, suspended, avatar_url")
+      .eq("firm_id", firmId)
+      .order("full_name", { ascending: true });
+
+    teamMembers = (rawMembers ?? []).map((m) => ({
+      id: m.id,
+      full_name: m.full_name ?? null,
+      email: m.email ?? null,
+      role: m.role,
+      suspended: m.suspended ?? false,
+      avatar_url: m.avatar_url ?? null,
+    }));
+
+    const { data: rawInvites } = await supabaseAdmin
+      .from("team_invitations")
+      .select("id, token, email, role, sent_at, expires_at")
+      .eq("firm_id", firmId)
+      .eq("accepted", false)
+      .order("sent_at", { ascending: false });
+
+    pendingInvitations = (rawInvites ?? []).map((i) => ({
+      id: i.id,
+      token: i.token,
+      email: i.email,
+      role: i.role,
+      sent_at: i.sent_at,
+      expires_at: i.expires_at,
+    }));
+  }
+
   return (
     <SettingsPage
       firm={firm}
       profile={profileData}
       templates={templates}
       globalTemplates={globalTemplates}
+      teamMembers={teamMembers}
+      pendingInvitations={pendingInvitations}
+      showTeam={isFirmAdmin}
     />
   );
 }
