@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
-const ALLOWED_FIELDS = ["name", "mara_number", "abn", "address", "phone", "email", "logo_url"] as const;
+const ALLOWED_FIELDS = ["name", "abn", "address", "phone", "email", "logo_url"] as const;
 
 export async function PATCH(request: Request) {
   const sessionClient = await createClient();
@@ -38,7 +38,7 @@ export async function PATCH(request: Request) {
     .from("firms")
     .update(updates)
     .eq("id", profile.firm_id)
-    .select("id, name, mara_number, abn, address, phone, email, logo_url, plan")
+    .select("id, name, abn, address, phone, email, logo_url, plan")
     .single();
 
   if (error || !firm) {

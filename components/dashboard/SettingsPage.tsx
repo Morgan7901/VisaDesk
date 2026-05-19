@@ -32,7 +32,6 @@ import {
 export interface FirmData {
   id: string;
   name: string;
-  mara_number: string | null;
   abn: string | null;
   address: string | null;
   phone: string | null;
@@ -153,7 +152,6 @@ function FirmSettingsForm({
     initialFirm ?? {
       id: "",
       name: "",
-      mara_number: null,
       abn: null,
       address: null,
       phone: null,
@@ -181,7 +179,6 @@ function FirmSettingsForm({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name:        firm.name,
-        mara_number: firm.mara_number || null,
         abn:         firm.abn || null,
         address:     firm.address || null,
         phone:       firm.phone || null,
@@ -218,26 +215,15 @@ function FirmSettingsForm({
         />
       </FormRow>
 
-      <div className="grid grid-cols-2 gap-4">
-        <FormRow label="MARA Number (Firm)">
-          <input
-            type="text"
-            value={firm.mara_number ?? ""}
-            onChange={(e) => set("mara_number", e.target.value)}
-            placeholder="1234567"
-            className={inputCls}
-          />
-        </FormRow>
-        <FormRow label="ABN">
-          <input
-            type="text"
-            value={firm.abn ?? ""}
-            onChange={(e) => set("abn", e.target.value)}
-            placeholder="12 345 678 901"
-            className={inputCls}
-          />
-        </FormRow>
-      </div>
+      <FormRow label="ABN">
+        <input
+          type="text"
+          value={firm.abn ?? ""}
+          onChange={(e) => set("abn", e.target.value)}
+          placeholder="12 345 678 901"
+          className={inputCls}
+        />
+      </FormRow>
 
       <FormRow label="Address">
         <input
