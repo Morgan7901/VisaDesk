@@ -15,6 +15,8 @@ import {
   Clock,
   RefreshCw,
   Trash2,
+  Library,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileUploader } from "./FileUploader";
@@ -33,9 +35,19 @@ export interface CaseDocument {
   description: string | null;
 }
 
+// Mirrors the shape returned by document_types table
+interface DocumentType {
+  id: string;
+  label: string;
+  is_required: boolean;
+  portal_upload: string | null;
+  description: string | null;
+}
+
 interface Props {
   documents: CaseDocument[];
   caseId: string;
+  visaSubclass: string | null;
 }
 
 function formatBytes(bytes: number): string {
@@ -108,7 +120,7 @@ const SECTION_LABELS: Record<string, string> = {
   rejected: "Rejected",
 };
 
-export function DocumentChecklist({ documents, caseId }: Props) {
+export function DocumentChecklist({ documents, caseId, visaSubclass }: Props) {
   const router = useRouter();
 
   const [uploadingId, setUploadingId] = useState<string | null>(null);
@@ -133,6 +145,15 @@ export function DocumentChecklist({ documents, caseId }: Props) {
   const [addRequired, setAddRequired] = useState(true);
   const [submittingAdd, setSubmittingAdd] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+
+  // Load standard documents modal
+  const [showLoadModal, setShowLoadModal] = useState(false);
+  const [loadingTypes, setLoadingTypes] = useState(false);
+  const [docTypes, setDocTypes] = useState<DocumentType[]>([]);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [submittingLoad, setSubmittingLoad] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadResult, setLoadResult] = useState<{ created: number; skipped: number } | null>(null);
 
   async function handleDelete(id: string) {
     setDeletingId(id);
@@ -215,6 +236,65 @@ export function DocumentChecklist({ documents, caseId }: Props) {
     router.refresh();
   }
 
+  async function openLoadModal() {
+    setShowLoadModal(true);
+    setLoadError(null);
+    setLoadResult(null);
+    setDocTypes([]);
+    setCheckedIds(new Set());
+    setLoadingTypes(true);
+
+    // Fetch document_types for this visa subclass (and any that apply to all, i.e. null)
+    const qs = visaSubclass
+      ? `?visaSubclass=${encodeURIComponent(visaSubclass)}`
+      : "";
+    const res = await fetch(`/api/document-types${qs}`);
+    if (res.ok) {
+      const data = await res.json() as { documentTypes: DocumentType[] };
+      setDocTypes(data.documentTypes ?? []);
+      setCheckedIds(new Set((data.documentTypes ?? []).map((dt) => dt.id)));
+    } else {
+      setLoadError("Failed to load standard documents.");
+    }
+    setLoadingTypes(false);
+  }
+
+  function toggleCheck(id: string) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll(checked: boolean) {
+    setCheckedIds(checked ? new Set(docTypes.map((dt) => dt.id)) : new Set());
+  }
+
+  async function submitLoad() {
+    if (checkedIds.size === 0) return;
+    setSubmittingLoad(true);
+    setLoadError(null);
+
+    const res = await fetch(`/api/cases/${caseId}/documents/load-template`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selectedIds: Array.from(checkedIds) }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setLoadError(data.error ?? "Failed to load documents.");
+      setSubmittingLoad(false);
+      return;
+    }
+
+    setLoadResult({ created: data.created?.length ?? 0, skipped: data.skipped ?? 0 });
+    setSubmittingLoad(false);
+    router.refresh();
+  }
+
   const grouped = SECTION_ORDER.map((status) => ({
     status,
     label: SECTION_LABELS[status],
@@ -234,14 +314,26 @@ export function DocumentChecklist({ documents, caseId }: Props) {
             {documents.length} approved
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 rounded-md bg-[#0f172a] px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
-        >
-          <Plus className="h-4 w-4" />
-          Add Document
-        </button>
+        <div className="flex items-center gap-2">
+          {visaSubclass && (
+            <button
+              type="button"
+              onClick={openLoadModal}
+              className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <Library className="h-4 w-4" />
+              Load Standard Docs
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 rounded-md bg-[#0f172a] px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+          >
+            <Plus className="h-4 w-4" />
+            Add Document
+          </button>
+        </div>
       </div>
 
       {documents.length === 0 ? (
@@ -531,6 +623,162 @@ export function DocumentChecklist({ documents, caseId }: Props) {
                 )}
                 Submit Review
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Load Standard Documents modal */}
+      {showLoadModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !submittingLoad) setShowLoadModal(false);
+          }}
+        >
+          <div className="w-full max-w-lg rounded-xl bg-white shadow-xl flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 shrink-0">
+              <div>
+                <h3 className="text-base font-semibold text-slate-800">
+                  Load Standard Documents
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  SC-{visaSubclass} standard document checklist
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLoadModal(false)}
+                disabled={submittingLoad}
+                className="text-slate-400 hover:text-slate-600 disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {loadingTypes ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                </div>
+              ) : loadError && docTypes.length === 0 ? (
+                <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  {loadError}
+                </div>
+              ) : docTypes.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-400">
+                  No standard documents found for SC-{visaSubclass}.
+                </p>
+              ) : (
+                <>
+                  {/* Select all toggle */}
+                  <label className="mb-3 flex cursor-pointer items-center gap-2 border-b border-slate-100 pb-3">
+                    <input
+                      type="checkbox"
+                      checked={checkedIds.size === docTypes.length}
+                      onChange={(e) => toggleAll(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 accent-[#0f172a]"
+                    />
+                    <span className="text-sm font-medium text-slate-700">
+                      Select all ({docTypes.length})
+                    </span>
+                  </label>
+
+                  <div className="space-y-1">
+                    {docTypes.map((dt) => (
+                      <label
+                        key={dt.id}
+                        className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2.5 hover:bg-slate-50"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checkedIds.has(dt.id)}
+                          onChange={() => toggleCheck(dt.id)}
+                          className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-[#0f172a]"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-sm font-medium text-slate-800">
+                              {dt.label}
+                            </span>
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-xs font-medium",
+                                dt.is_required
+                                  ? "bg-red-50 text-red-600"
+                                  : "bg-slate-100 text-slate-500"
+                              )}
+                            >
+                              {dt.is_required ? "Required" : "Optional"}
+                            </span>
+                            {dt.portal_upload === "client" && (
+                              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">
+                                Client Portal
+                              </span>
+                            )}
+                            {dt.portal_upload === "sponsor" && (
+                              <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+                                Sponsor Portal
+                              </span>
+                            )}
+                          </div>
+                          {dt.description && (
+                            <p className="mt-0.5 text-xs text-slate-400">{dt.description}</p>
+                          )}
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  {loadError && (
+                    <div className="mt-3 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                      <AlertCircle className="h-4 w-4 shrink-0" />
+                      {loadError}
+                    </div>
+                  )}
+
+                  {loadResult && (
+                    <div className="mt-3 flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                      <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      {loadResult.created} document{loadResult.created !== 1 ? "s" : ""} added
+                      {loadResult.skipped > 0 && (
+                        <>, {loadResult.skipped} skipped (already exist)</>
+                      )}.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4 shrink-0">
+              <span className="text-xs text-slate-400">
+                {checkedIds.size} of {docTypes.length} selected
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLoadModal(false)}
+                  disabled={submittingLoad}
+                  className="rounded-md px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  {loadResult ? "Done" : "Cancel"}
+                </button>
+                {!loadResult && (
+                  <button
+                    type="button"
+                    onClick={submitLoad}
+                    disabled={submittingLoad || checkedIds.size === 0 || loadingTypes}
+                    className="flex items-center gap-1.5 rounded-md bg-[#0f172a] px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {submittingLoad && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Add {checkedIds.size > 0 ? checkedIds.size : ""} Document{checkedIds.size !== 1 ? "s" : ""}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

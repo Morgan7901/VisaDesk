@@ -10,14 +10,23 @@ import {
 export default async function DocumentsPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = await params;
+
   // Auth via session client
   const sessionClient = await createClient();
   const {
     data: { user },
   } = await sessionClient.auth.getUser();
   if (!user) redirect("/login");
+
+  // Fetch case visa_subclass so we can offer standard document templates
+  const { data: caseRow } = await supabaseAdmin
+    .from("cases")
+    .select("visa_subclass")
+    .eq("id", id)
+    .single();
 
   // Fetch documents via admin client to bypass RLS
   const { data: rawDocs } = await supabaseAdmin
@@ -26,7 +35,7 @@ export default async function DocumentsPage({
       `id, label, status, file_name, file_size, uploaded_at, review_notes, storage_path,
        document_types(description, is_required, portal_upload)`
     )
-    .eq("case_id", params.id);
+    .eq("case_id", id);
 
   type DocType = {
     description: string | null;
@@ -54,5 +63,11 @@ export default async function DocumentsPage({
     };
   });
 
-  return <DocumentChecklist documents={documents} caseId={params.id} />;
+  return (
+    <DocumentChecklist
+      documents={documents}
+      caseId={id}
+      visaSubclass={caseRow?.visa_subclass ?? null}
+    />
+  );
 }
