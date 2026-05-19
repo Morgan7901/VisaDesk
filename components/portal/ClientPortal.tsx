@@ -106,6 +106,9 @@ function DocRow({
   token: string;
   onUpdated: (updated: PortalDocument) => void;
 }) {
+  // Local copy so the UI updates immediately on upload without waiting
+  // for the parent state re-render cycle to complete.
+  const [localDoc, setLocalDoc] = useState<PortalDocument>(doc);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -121,23 +124,31 @@ function DocRow({
     fd.append("file", file);
 
     const res = await fetch(
-      `/api/portal/client/${token}/documents/${doc.id}/upload`,
+      `/api/portal/client/${token}/documents/${localDoc.id}/upload`,
       { method: "POST", body: fd }
     );
     const json = await res.json().catch(() => ({}));
 
     if (res.ok && json.document) {
-      onUpdated({ ...doc, ...json.document });
+      const updated: PortalDocument = {
+        ...localDoc,
+        status: json.document.status ?? "uploaded",
+        file_name: json.document.file_name ?? file.name,
+        uploaded_at: json.document.uploaded_at ?? new Date().toISOString(),
+      };
+      // Update local state immediately — no flicker, no dependency on parent re-render
+      setLocalDoc(updated);
+      // Also propagate to parent so the documents array stays in sync
+      onUpdated(updated);
     } else {
       setError(json.error ?? "Upload failed. Please try again.");
     }
     setUploading(false);
-    // Reset so same file can be re-selected
     e.target.value = "";
   };
 
   const statusBadge = () => {
-    switch (doc.status) {
+    switch (localDoc.status) {
       case "approved":
         return (
           <span className="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
@@ -147,9 +158,9 @@ function DocRow({
         );
       case "uploaded":
         return (
-          <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-            <Clock className="h-3 w-3" />
-            Under review
+          <span className="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
+            <CheckCircle2 className="h-3 w-3" />
+            Uploaded — awaiting review
           </span>
         );
       case "rejected":
@@ -169,7 +180,7 @@ function DocRow({
     }
   };
 
-  const canUpload = doc.status === "pending" || doc.status === "rejected";
+  const canUpload = localDoc.status === "pending" || localDoc.status === "rejected";
 
   return (
     <div className="border-b border-slate-100 last:border-0">
@@ -177,17 +188,17 @@ function DocRow({
         <FileText className="h-4 w-4 shrink-0 text-slate-300" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-slate-800">{doc.label}</span>
-            {!doc.is_required && (
+            <span className="text-sm font-medium text-slate-800">{localDoc.label}</span>
+            {!localDoc.is_required && (
               <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-500">
                 Optional
               </span>
             )}
           </div>
-          {doc.file_name && (
+          {localDoc.file_name && (
             <p className="mt-0.5 text-xs text-slate-400">
-              {doc.file_name}
-              {doc.uploaded_at && <> · Uploaded {fmt(doc.uploaded_at)}</>}
+              {localDoc.file_name}
+              {localDoc.uploaded_at && <> · Uploaded {fmt(localDoc.uploaded_at)}</>}
             </p>
           )}
         </div>
@@ -202,7 +213,7 @@ function DocRow({
                 className="flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"
               >
                 <Upload className="h-3 w-3" />
-                {uploading ? "Uploading…" : doc.status === "rejected" ? "Re-upload" : "Upload"}
+                {uploading ? "Uploading…" : localDoc.status === "rejected" ? "Re-upload" : "Upload"}
               </button>
               <input
                 ref={fileRef}
@@ -212,7 +223,7 @@ function DocRow({
               />
             </>
           )}
-          {doc.status === "rejected" && doc.review_notes && (
+          {localDoc.status === "rejected" && localDoc.review_notes && (
             <button onClick={() => setExpanded((e) => !e)} className="text-slate-400 hover:text-slate-600">
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
@@ -221,9 +232,9 @@ function DocRow({
       </div>
 
       {/* Rejection notes */}
-      {doc.status === "rejected" && doc.review_notes && expanded && (
+      {localDoc.status === "rejected" && localDoc.review_notes && expanded && (
         <div className="mx-4 mb-3 border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          <span className="font-medium">Reason: </span>{doc.review_notes}
+          <span className="font-medium">Reason: </span>{localDoc.review_notes}
         </div>
       )}
 
