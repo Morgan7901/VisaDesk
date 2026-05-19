@@ -97,16 +97,25 @@ const COLUMNS: Column[] = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function classifyCase(c: PipelineCase): string {
-  const stage = (c.current_stage_label ?? "").toLowerCase();
+  const stage  = (c.current_stage_label ?? "").toLowerCase();
   const status = c.status.toLowerCase();
 
+  // Terminal statuses always win — these are set by agent or auto by workflow
   if (status === "granted")   return "granted";
   if (status === "refused")   return "refused";
   if (status === "withdrawn") return "withdrawn";
 
-  if (stage.includes("onboarding"))                                return "onboarding";
-  if (stage.includes("lodgement") || stage.includes("post-lodge") ||
-      status === "submitted")                                       return "lodged";
+  // submitted = all workflow stages complete, awaiting DHA decision
+  if (status === "submitted") return "lodged";
+
+  // Active cases — classify by current stage name
+  if (stage.includes("onboarding")) return "onboarding";
+
+  if (
+    stage.includes("lodgement") ||
+    stage.includes("post-lodge") ||
+    stage.includes("post lodge")
+  ) return "lodged";
 
   return "in_progress";
 }

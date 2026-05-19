@@ -162,36 +162,77 @@ function StatusDropdown({
 
   const styles = STATUS_STYLES[status] ?? STATUS_STYLES.active;
 
+  // Statuses that represent a DHA decision — shown more prominently in the dropdown
+  const dhaDecision = new Set(["granted", "refused"]);
+
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          "flex items-center gap-1.5 border px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+          "flex items-center gap-1.5 border px-3 py-1.5 text-sm font-semibold capitalize transition-colors shadow-sm",
           styles.badge,
-          "hover:opacity-80"
+          "hover:opacity-90 active:scale-95"
         )}
       >
-        {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
         {status}
-        <ChevronDown className="h-3 w-3" />
+        <ChevronDown className="h-3.5 w-3.5 opacity-70" />
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-36 border border-slate-200 bg-white py-1 shadow-lg">
-          {STATUSES.map((s) => {
-            const st = STATUS_STYLES[s] ?? STATUS_STYLES.active;
+        <div className="absolute left-0 top-full z-20 mt-1.5 w-48 border border-slate-200 bg-white shadow-xl overflow-hidden">
+          {/* DHA decision section — most important actions for agents */}
+          <div className="border-b border-slate-100 px-3 py-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+              DHA Decision
+            </p>
+          </div>
+          {(["granted", "refused"] as const).map((s) => {
+            const st = STATUS_STYLES[s];
+            const isActive = s === status;
             return (
               <button
                 key={s}
                 onClick={() => change(s)}
+                disabled={isActive}
                 className={cn(
-                  "flex w-full items-center px-3 py-1.5 text-xs font-medium capitalize hover:bg-slate-50",
-                  s === status ? "opacity-40 cursor-default" : ""
+                  "flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-semibold capitalize transition-colors",
+                  s === "granted"
+                    ? "hover:bg-green-50 text-green-700"
+                    : "hover:bg-red-50 text-red-700",
+                  isActive ? "opacity-40 cursor-default" : "cursor-pointer"
                 )}
               >
-                <span className={cn("mr-2 h-2 w-2 rounded-full border", st.badge)} />
+                <span className={cn("h-2.5 w-2.5 rounded-full border-2", st.badge)} />
+                Mark {s.charAt(0).toUpperCase() + s.slice(1)}
+                {isActive && <span className="ml-auto text-xs font-normal opacity-60">current</span>}
+              </button>
+            );
+          })}
+
+          {/* Other statuses */}
+          <div className="border-t border-slate-100 px-3 py-1.5 mt-0.5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+              Case Status
+            </p>
+          </div>
+          {STATUSES.filter((s) => !dhaDecision.has(s)).map((s) => {
+            const st = STATUS_STYLES[s] ?? STATUS_STYLES.active;
+            const isActive = s === status;
+            return (
+              <button
+                key={s}
+                onClick={() => change(s)}
+                disabled={isActive}
+                className={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-xs font-medium capitalize hover:bg-slate-50 transition-colors",
+                  isActive ? "opacity-40 cursor-default" : "cursor-pointer"
+                )}
+              >
+                <span className={cn("h-2 w-2 rounded-full border", st.badge)} />
                 {s}
+                {isActive && <span className="ml-auto text-xs font-normal opacity-60">current</span>}
               </button>
             );
           })}

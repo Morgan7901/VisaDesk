@@ -88,11 +88,21 @@ export async function POST(
   const nextStage = sorted.slice(currentIdx + 1).find((s) => !s.is_complete);
 
   if (nextStage) {
+    // Advance to the next incomplete stage
     await supabaseAdmin
       .from("cases")
       .update({ current_stage_id: nextStage.stage_id })
       .eq("id", params.id);
+  } else {
+    // This was the final stage — all workflow stages are now complete.
+    // Set status to 'submitted' to move the case into the Lodged column.
+    // Agents manually update to 'granted' or 'refused' when DHA decides.
+    await supabaseAdmin
+      .from("cases")
+      .update({ status: "submitted" })
+      .eq("id", params.id)
+      .eq("status", "active"); // only auto-advance if still active (don't overwrite granted/refused)
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, final: !nextStage });
 }
