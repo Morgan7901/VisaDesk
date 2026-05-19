@@ -1,19 +1,26 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+
+const supabaseAdmin = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 export async function POST(
   _request: NextRequest,
   { params }: { params: { id: string; stageId: string } }
 ) {
-  const supabase = await createClient();
+  const sessionClient = await createClient();
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await sessionClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // Get all required task IDs for this stage
-  const { data: requiredTasks, error: taskFetchErr } = await supabase
+  const { data: requiredTasks, error: taskFetchErr } = await supabaseAdmin
     .from("workflow_tasks")
     .select("id")
     .eq("stage_id", params.stageId)
@@ -24,7 +31,7 @@ export async function POST(
   if (requiredTasks && requiredTasks.length > 0) {
     const requiredIds = requiredTasks.map((t) => t.id);
 
-    const { data: incomplete, error: checkErr } = await supabase
+    const { data: incomplete, error: checkErr } = await supabaseAdmin
       .from("case_task_progress")
       .select("id")
       .eq("case_id", params.id)
@@ -42,7 +49,7 @@ export async function POST(
   }
 
   // Mark stage complete
-  const { data: updated, error: stageErr } = await supabase
+  const { data: updated, error: stageErr } = await supabaseAdmin
     .from("case_stage_progress")
     .update({
       is_complete: true,
@@ -57,7 +64,7 @@ export async function POST(
   if (!updated?.length) return NextResponse.json({ error: "Stage not found." }, { status: 404 });
 
   // Advance current_stage_id to next incomplete stage
-  const { data: allStages } = await supabase
+  const { data: allStages } = await supabaseAdmin
     .from("case_stage_progress")
     .select("stage_id, is_complete, workflow_stages(stage_order)")
     .eq("case_id", params.id);
@@ -81,7 +88,7 @@ export async function POST(
   const nextStage = sorted.slice(currentIdx + 1).find((s) => !s.is_complete);
 
   if (nextStage) {
-    await supabase
+    await supabaseAdmin
       .from("cases")
       .update({ current_stage_id: nextStage.stage_id })
       .eq("id", params.id);

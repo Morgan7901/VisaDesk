@@ -4,16 +4,28 @@ import { NextResponse } from "next/server";
 
 const supabaseAdmin = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
+  const sessionClient = await createClient();
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await sessionClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Fetch firm_id via admin client to bypass RLS
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("firm_id")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.firm_id) {
+    return NextResponse.json({ error: "No firm associated." }, { status: 400 });
+  }
 
   const { case_id, label, description, portal_upload, is_required } =
     await request.json();
@@ -25,11 +37,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // Verify the case belongs to the user's firm via RLS
-  const { data: caseRow } = await supabase
+  // Verify the case belongs to the user's firm using admin client with explicit firm_id check
+  const { data: caseRow } = await supabaseAdmin
     .from("cases")
     .select("id")
     .eq("id", case_id)
+    .eq("firm_id", profile.firm_id)
     .single();
 
   if (!caseRow) {
@@ -57,7 +70,7 @@ export async function POST(request: Request) {
   }
 
   // Create the case_documents row
-  const { data: doc, error: docErr } = await supabase
+  const { data: doc, error: docErr } = await supabaseAdmin
     .from("case_documents")
     .insert({
       case_id,

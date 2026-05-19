@@ -38,8 +38,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // RLS with check: firm_id = get_my_firm_id()
-  const { error } = await supabase.from("deadlines").insert({
+  const { error } = await supabaseAdmin.from("deadlines").insert({
     case_id: caseId,
     firm_id: profile.firm_id,
     label,

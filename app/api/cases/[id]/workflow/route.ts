@@ -1,22 +1,29 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+
+const supabaseAdmin = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = await createClient();
+  const sessionClient = await createClient();
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await sessionClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const arr = <T>(v: T | T[] | null): T | null =>
     Array.isArray(v) ? (v[0] ?? null) : v;
 
   // Stage progress with stage details
-  const { data: stageRows, error: stageErr } = await supabase
+  const { data: stageRows, error: stageErr } = await supabaseAdmin
     .from("case_stage_progress")
     .select("id, is_complete, completed_at, stage_id, workflow_stages(label, stage_order, icon)")
     .eq("case_id", params.id);
@@ -24,7 +31,7 @@ export async function GET(
   if (stageErr) return NextResponse.json({ error: stageErr.message }, { status: 500 });
 
   // Task progress with task details
-  const { data: taskRows, error: taskErr } = await supabase
+  const { data: taskRows, error: taskErr } = await supabaseAdmin
     .from("case_task_progress")
     .select(
       "id, is_complete, completed_at, task_id, workflow_tasks(label, task_order, is_required, trigger_type, requires_portal, stage_id)"

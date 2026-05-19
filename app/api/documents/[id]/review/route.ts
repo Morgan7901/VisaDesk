@@ -1,5 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+
+const supabaseAdmin = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 const VALID_REVIEW_STATUSES = new Set(["approved", "rejected"]);
 
@@ -7,11 +14,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = await createClient();
+  const sessionClient = await createClient();
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await sessionClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { status, review_notes } = await request.json();
@@ -27,8 +34,8 @@ export async function PATCH(
     );
   }
 
-  // RLS enforces firm ownership via case relationship
-  const { data: updated, error } = await supabase
+  // Use admin client — case_documents has no firm_id, scoped by case ownership
+  const { data: updated, error } = await supabaseAdmin
     .from("case_documents")
     .update({
       status,

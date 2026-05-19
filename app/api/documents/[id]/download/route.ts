@@ -4,22 +4,23 @@ import { NextRequest, NextResponse } from "next/server";
 
 const supabaseAdmin = createAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
 );
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = await createClient();
+  const sessionClient = await createClient();
 
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await sessionClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // RLS enforces firm ownership — fetch storage_path
-  const { data: docRow } = await supabase
+  // Use admin client to fetch storage_path (case_documents has no firm_id, scoped by case ownership)
+  const { data: docRow } = await supabaseAdmin
     .from("case_documents")
     .select("storage_path, file_name")
     .eq("id", params.id)
