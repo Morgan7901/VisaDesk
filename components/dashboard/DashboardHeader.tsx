@@ -1,6 +1,13 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import dynamic from "next/dynamic";
+
+// Loaded client-side only — needs browser Supabase client + auth store
+const NotificationBell = dynamic(
+  () => import("./NotificationBell").then((m) => m.NotificationBell),
+  { ssr: false }
+);
 
 const PAGE_TITLES: Record<string, string> = {
   "/dashboard":           "Dashboard",
@@ -30,7 +37,10 @@ export function DashboardHeader({ userName }: DashboardHeaderProps) {
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6">
       <h1 className="text-sm font-semibold text-slate-800">{title}</h1>
-      <span className="text-sm text-slate-500">{userName}</span>
+      <div className="flex items-center gap-3">
+        <NotificationBell />
+        <span className="text-sm text-slate-500">{userName}</span>
+      </div>
     </header>
   );
 }

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { notify } from "@/lib/notify";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -48,6 +49,34 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!updated?.length) return NextResponse.json({ error: "Case not found." }, { status: 404 });
+
+  // Notify on terminal outcomes
+  if (status === "granted" || status === "refused") {
+    const { data: caseInfo } = await supabaseAdmin
+      .from("cases")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .select("assigned_to, clients!client_id(full_name)")
+      .eq("id", params.id)
+      .single();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const clientRow: any = Array.isArray(caseInfo?.clients)
+      ? caseInfo.clients[0]
+      : caseInfo?.clients;
+    const clientName: string = clientRow?.full_name ?? "Client";
+    const recipientId = caseInfo?.assigned_to ?? user.id;
+
+    await notify(
+      [recipientId],
+      profile.firm_id,
+      status === "granted" ? "case_granted" : "case_refused",
+      status === "granted"
+        ? `${clientName}'s visa has been granted`
+        : `${clientName}'s visa has been refused`,
+      undefined,
+      `/dashboard/cases/${params.id}`
+    );
+  }
 
   return NextResponse.json({ success: true });
 }

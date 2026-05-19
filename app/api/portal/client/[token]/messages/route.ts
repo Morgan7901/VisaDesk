@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { notify } from "@/lib/notify";
 import { NextResponse } from "next/server";
 
 async function validateClientToken(token: string) {
@@ -107,6 +108,29 @@ export async function POST(
     console.error("[portal/client/messages POST]", error);
     return NextResponse.json({ error: error?.message ?? "Failed to send." }, { status: 500 });
   }
+
+  // Notify all active agents in the firm
+  const [{ data: clientRow }, { data: firmProfiles }] = await Promise.all([
+    supabaseAdmin
+      .from("clients")
+      .select("full_name")
+      .eq("id", client.id)
+      .single(),
+    supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .eq("firm_id", client.firm_id)
+      .eq("suspended", false),
+  ]);
+  const profileIds = (firmProfiles ?? []).map((p) => p.id);
+  await notify(
+    profileIds,
+    client.firm_id,
+    "message_received",
+    `New message from ${clientRow?.full_name ?? "client"}`,
+    body.trim().slice(0, 100),
+    `/dashboard/cases/${caseId}/comms`
+  );
 
   return NextResponse.json({
     message: {

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { notify } from "@/lib/notify";
 import { NextResponse } from "next/server";
 
 export async function POST(
@@ -79,6 +80,22 @@ export async function POST(
     console.error("[portal/client/upload] db error:", dbError);
     return NextResponse.json({ error: dbError.message }, { status: 500 });
   }
+
+  // Notify all active agents in the firm
+  const [{ data: clientRow }, { data: docRow }, { data: firmProfiles }] = await Promise.all([
+    supabaseAdmin.from("clients").select("full_name").eq("id", client.id).single(),
+    supabaseAdmin.from("case_documents").select("label").eq("id", documentId).single(),
+    supabaseAdmin.from("profiles").select("id").eq("firm_id", client.firm_id).eq("suspended", false),
+  ]);
+  const profileIds = (firmProfiles ?? []).map((p) => p.id);
+  await notify(
+    profileIds,
+    client.firm_id,
+    "document_uploaded",
+    `${clientRow?.full_name ?? "Client"} uploaded ${docRow?.label ?? "a document"}`,
+    undefined,
+    `/dashboard/cases/${doc.case_id}/documents`
+  );
 
   return NextResponse.json({ document: updated });
 }

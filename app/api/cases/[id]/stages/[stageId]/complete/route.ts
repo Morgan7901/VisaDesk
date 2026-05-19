@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { notify } from "@/lib/notify";
 import { NextRequest, NextResponse } from "next/server";
 
 
@@ -97,6 +98,31 @@ export async function POST(
       .update({ status: "submitted" })
       .eq("id", params.id)
       .eq("status", "active"); // only auto-advance if still active (don't overwrite granted/refused)
+  }
+
+  // Notify the assigned case agent (fall back to the user who triggered it)
+  const [{ data: stageInfo }, { data: caseInfo }] = await Promise.all([
+    supabaseAdmin
+      .from("workflow_stages")
+      .select("label")
+      .eq("id", params.stageId)
+      .single(),
+    supabaseAdmin
+      .from("cases")
+      .select("assigned_to, firm_id")
+      .eq("id", params.id)
+      .single(),
+  ]);
+  if (caseInfo?.firm_id) {
+    const recipientId = caseInfo.assigned_to ?? user.id;
+    await notify(
+      [recipientId],
+      caseInfo.firm_id,
+      "stage_complete",
+      `Stage complete: ${stageInfo?.label ?? "Unknown stage"}`,
+      undefined,
+      `/dashboard/cases/${params.id}`
+    );
   }
 
   return NextResponse.json({ success: true, final: !nextStage });
