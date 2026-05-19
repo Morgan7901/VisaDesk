@@ -31,6 +31,19 @@ export async function GET(request: NextRequest) {
   }
 
   const q = request.nextUrl.searchParams.get("q") ?? "";
+  const prefillId = request.nextUrl.searchParams.get("id");
+
+  // When a specific client ID is requested (prefill), return just that client
+  if (prefillId) {
+    const { data: clients, error } = await supabaseAdmin
+      .from("clients")
+      .select("id, full_name, email")
+      .eq("firm_id", profile.firm_id)
+      .eq("id", prefillId)
+      .limit(1);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(clients ?? []);
+  }
 
   const { data: clients, error } = await supabaseAdmin
     .from("clients")

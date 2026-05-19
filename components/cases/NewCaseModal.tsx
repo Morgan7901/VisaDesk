@@ -36,9 +36,11 @@ interface NewClientFields {
 interface NewCaseModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** When set, pre-selects a client by ID (used from the client profile page) */
+  prefillClientId?: string;
 }
 
-export function NewCaseModal({ isOpen, onClose }: NewCaseModalProps) {
+export function NewCaseModal({ isOpen, onClose, prefillClientId }: NewCaseModalProps) {
   const router = useRouter();
 
   // Client selection state
@@ -108,7 +110,7 @@ export function NewCaseModal({ isOpen, onClose }: NewCaseModalProps) {
     return () => clearTimeout(timer);
   }, [clientQuery, isNewClient]);
 
-  // Reset form when modal closes
+  // Reset form when modal closes; pre-fill client when prefillClientId is set
   useEffect(() => {
     if (!isOpen) {
       setClientQuery(""); setClientResults([]); setShowDropdown(false);
@@ -116,8 +118,23 @@ export function NewCaseModal({ isOpen, onClose }: NewCaseModalProps) {
       setNewClient({ full_name: "", email: "", phone: "", nationality: "" });
       setVisaSubclass(""); setVisaStream(""); setNotes("");
       setError(null); setIsSubmitting(false);
+      return;
     }
-  }, [isOpen]);
+    if (prefillClientId) {
+      fetch(`/api/clients/search?q=&id=${prefillClientId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          // search route returns array; find by id if present, else use first
+          const list: ClientOption[] = Array.isArray(data) ? data : [];
+          const match = list.find((c) => c.id === prefillClientId) ?? list[0] ?? null;
+          if (match) {
+            setSelectedClient(match);
+            setClientQuery(match.full_name);
+          }
+        })
+        .catch(() => {/* silent */});
+    }
+  }, [isOpen, prefillClientId]);
 
   const selectClient = (c: ClientOption) => {
     setSelectedClient(c);
