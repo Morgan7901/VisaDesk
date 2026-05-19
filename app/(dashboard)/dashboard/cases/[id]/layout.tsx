@@ -82,11 +82,17 @@ export default async function CaseDetailLayout({
     agent: arr(raw.agent as CaseDetailData["agent"] | CaseDetailData["agent"][] | null),
   };
 
+  // Comms count for the tab badge — lightweight count query
+  const { count: commCount } = await supabaseAdmin
+    .from("communications")
+    .select("id", { count: "exact", head: true })
+    .eq("case_id", params.id);
+
   return (
     // -mx-6 -mt-6 cancels the parent dashboard layout's p-6 so header spans full width
     <div className="-mx-6 -mt-6">
       <CaseHeader caseData={caseData} />
-      <CaseTabs caseId={params.id} />
+      <CaseTabs caseId={params.id} commCount={commCount ?? 0} />
       <div className="p-6">{children}</div>
     </div>
   );

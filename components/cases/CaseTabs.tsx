@@ -4,21 +4,33 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-const TABS = [
-  { label: "Workflow",       suffix: "" },
-  { label: "Documents",      suffix: "/documents" },
-  { label: "Communications", suffix: "/comms" },
-  { label: "Trust",          suffix: "/trust" },
-];
+interface TabDef {
+  label: string;
+  suffix: string;
+  badge?: number;
+}
 
-export function CaseTabs({ caseId }: { caseId: string }) {
+export function CaseTabs({
+  caseId,
+  commCount,
+}: {
+  caseId: string;
+  commCount?: number;
+}) {
   const pathname = usePathname();
   const base = `/dashboard/cases/${caseId}`;
+
+  const TABS: TabDef[] = [
+    { label: "Workflow",       suffix: "" },
+    { label: "Documents",      suffix: "/documents" },
+    { label: "Communications", suffix: "/comms", badge: commCount },
+    { label: "Trust",          suffix: "/trust" },
+  ];
 
   return (
     <div className="border-b border-slate-200 bg-white px-6">
       <nav className="-mb-px flex gap-0">
-        {TABS.map(({ label, suffix }) => {
+        {TABS.map(({ label, suffix, badge }) => {
           const href = `${base}${suffix}`;
           const isActive =
             suffix === ""
@@ -30,13 +42,25 @@ export function CaseTabs({ caseId }: { caseId: string }) {
               key={label}
               href={href}
               className={cn(
-                "border-b-2 px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap",
+                "flex items-center gap-1.5 border-b-2 px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap",
                 isActive
                   ? "border-[#0f172a] text-slate-900"
                   : "border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300"
               )}
             >
               {label}
+              {typeof badge === "number" && badge > 0 && (
+                <span
+                  className={cn(
+                    "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums",
+                    isActive
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-200 text-slate-600"
+                  )}
+                >
+                  {badge > 99 ? "99+" : badge}
+                </span>
+              )}
             </Link>
           );
         })}
