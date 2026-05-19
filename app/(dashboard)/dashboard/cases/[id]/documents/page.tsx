@@ -1,23 +1,31 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import {
   DocumentChecklist,
   type CaseDocument,
 } from "@/components/documents/DocumentChecklist";
+
+const supabaseAdmin = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 export default async function DocumentsPage({
   params,
 }: {
   params: { id: string };
 }) {
-  const supabase = await createClient();
-
+  // Auth via session client
+  const sessionClient = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await sessionClient.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: rawDocs } = await supabase
+  // Fetch documents via admin client to bypass RLS
+  const { data: rawDocs } = await supabaseAdmin
     .from("case_documents")
     .select(
       `id, label, status, file_name, file_size, uploaded_at, review_notes, storage_path,

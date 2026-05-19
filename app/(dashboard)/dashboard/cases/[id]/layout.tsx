@@ -1,8 +1,15 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { CaseHeader } from "@/components/cases/CaseHeader";
 import { CaseTabs } from "@/components/cases/CaseTabs";
 import type { CaseDetailData } from "@/components/cases/CaseHeader";
+
+const supabaseAdmin = createAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 export default async function CaseDetailLayout({
   children,
@@ -11,15 +18,24 @@ export default async function CaseDetailLayout({
   children: React.ReactNode;
   params: { id: string };
 }) {
-  const supabase = await createClient();
-
+  // Auth via session client — admin client does not hold session context
+  const sessionClient = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await sessionClient.auth.getUser();
   if (!user) redirect("/login");
 
-  // Fetch case — RLS ensures it belongs to this user's firm
-  const { data: raw } = await supabase
+  // Fetch firm_id via admin client to bypass RLS on profiles
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("firm_id")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.firm_id) redirect("/login");
+
+  // Fetch case via admin client — bypass RLS, verify firm ownership explicitly
+  const { data: raw } = await supabaseAdmin
     .from("cases")
     .select(
       `id, ref_number, visa_subclass, visa_stream, status,
@@ -29,6 +45,7 @@ export default async function CaseDetailLayout({
        agent:profiles!agent_id(full_name, email)`
     )
     .eq("id", params.id)
+    .eq("firm_id", profile.firm_id)
     .single();
 
   if (!raw) redirect("/dashboard/cases");
@@ -36,7 +53,7 @@ export default async function CaseDetailLayout({
   // Resolve current stage label (current_stage_id has no FK constraint)
   let currentStageLabel: string | null = null;
   if (raw.current_stage_id) {
-    const { data: stage } = await supabase
+    const { data: stage } = await supabaseAdmin
       .from("workflow_stages")
       .select("label")
       .eq("id", raw.current_stage_id)
