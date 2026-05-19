@@ -163,36 +163,50 @@ export function CaseTable({ cases }: CaseTableProps) {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((c) => (
-                  <tr key={c.id} className="group hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">
-                      {c.ref_number ?? "—"}
+                  <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="font-mono text-xs text-slate-600 whitespace-nowrap">
+                      <a href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        {c.ref_number ?? "—"}
+                      </a>
                     </td>
-                    <td className="px-5 py-3 font-medium text-slate-800 whitespace-nowrap">
-                      {c.clients?.full_name ?? "—"}
+                    <td className="font-medium text-slate-800 whitespace-nowrap">
+                      <a href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        {c.clients?.full_name ?? "—"}
+                      </a>
                     </td>
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      <span className="inline-block bg-[#0f172a] px-2 py-0.5 text-xs font-medium text-white">
-                        SC-{c.visa_subclass}
-                      </span>
+                    <td className="whitespace-nowrap">
+                      <a href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        <span className="inline-block bg-[#0f172a] px-2 py-0.5 text-xs font-medium text-white">
+                          SC-{c.visa_subclass}
+                        </span>
+                      </a>
                     </td>
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      <StatusBadge status={c.status} />
+                    <td className="whitespace-nowrap">
+                      <a href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        <StatusBadge status={c.status} />
+                      </a>
                     </td>
-                    <td className="px-5 py-3 text-xs text-slate-500 max-w-[160px] truncate">
-                      {c.current_stage_label ?? "—"}
+                    <td className="text-xs text-slate-500 max-w-[160px]">
+                      <a href={`/dashboard/cases/${c.id}`} className="block px-5 py-3 truncate">
+                        {c.current_stage_label ?? "—"}
+                      </a>
                     </td>
-                    <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
-                      {c.agent?.full_name ?? "—"}
+                    <td className="text-xs text-slate-500 whitespace-nowrap">
+                      <a href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        {c.agent?.full_name ?? "—"}
+                      </a>
                     </td>
-                    <td className="px-5 py-3 text-xs text-slate-400 whitespace-nowrap">
-                      {formatDistanceToNow(parseISO(c.created_at), {
-                        addSuffix: true,
-                      })}
+                    <td className="text-xs text-slate-400 whitespace-nowrap">
+                      <a href={`/dashboard/cases/${c.id}`} className="block px-5 py-3">
+                        {formatDistanceToNow(parseISO(c.created_at), {
+                          addSuffix: true,
+                        })}
+                      </a>
                     </td>
                     <td className="pr-4 text-right whitespace-nowrap">
                       <a
                         href={`/dashboard/cases/${c.id}`}
-                        className="text-sm font-medium text-navy-600 hover:underline"
+                        className="text-sm font-medium text-slate-600 hover:underline"
                       >
                         View
                       </a>
