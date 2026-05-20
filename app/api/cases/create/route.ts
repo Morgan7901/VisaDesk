@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
 
+
 interface NewClientData {
   full_name: string;
   email?: string;
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     visaStream,
     notes,
     sponsorId,
-    templateId,
+    templateId: clientTemplateId,
   }: {
     clientId?: string;
     newClient?: NewClientData;
@@ -58,6 +59,14 @@ export async function POST(request: Request) {
     sponsorId?: string;
     templateId?: string;
   } = body;
+
+  console.log("[cases/create] body received:", {
+    visaSubclass,
+    sponsorId: sponsorId ?? null,
+    templateId: clientTemplateId ?? null,
+    hasClientId: !!clientId,
+    hasNewClient: !!newClient,
+  });
 
   if (!visaSubclass) {
     return NextResponse.json(
@@ -121,7 +130,45 @@ export async function POST(request: Request) {
 
     const refNumber = `${prefix}${String(nextNum).padStart(3, "0")}`;
 
-    // 5. Create the case
+    // 5. Resolve case template ID — use whatever the client sent, or look it up
+    //    server-side as a fallback (handles race conditions in the modal where
+    //    the async template fetch may not have resolved before submit).
+    let resolvedTemplateId: string | null = clientTemplateId ?? null;
+
+    if (!resolvedTemplateId) {
+      // Try firm-specific template first, then system default
+      const { data: firmTmpl } = await supabaseAdmin
+        .from("case_templates")
+        .select("id")
+        .eq("visa_subclass", visaSubclass)
+        .eq("firm_id", firmId)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      if (firmTmpl) {
+        resolvedTemplateId = firmTmpl.id;
+      } else {
+        const { data: sysTmpl } = await supabaseAdmin
+          .from("case_templates")
+          .select("id")
+          .eq("visa_subclass", visaSubclass)
+          .eq("is_system_default", true)
+          .eq("is_active", true)
+          .limit(1)
+          .maybeSingle();
+
+        if (sysTmpl) resolvedTemplateId = sysTmpl.id;
+      }
+    }
+
+    console.log("[cases/create] resolved template_id:", {
+      fromClient: clientTemplateId ?? null,
+      resolved: resolvedTemplateId,
+      visaSubclass,
+    });
+
+    // 6. Create the case
     const { data: newCase, error: caseErr } = await supabaseAdmin
       .from("cases")
       .insert({
@@ -134,7 +181,7 @@ export async function POST(request: Request) {
         visa_stream: visaStream ?? null,
         notes: notes ?? null,
         status: "active",
-        template_id: templateId ?? null,
+        template_id: resolvedTemplateId,
       })
       .select("id")
       .single();

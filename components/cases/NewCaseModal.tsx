@@ -221,7 +221,10 @@ export function NewCaseModal({ isOpen, onClose, prefillClientId, prefillSponsorI
     if (!visaSubclass) { setTemplateId(null); return; }
     fetch(`/api/case-templates/default?visa_subclass=${visaSubclass}`)
       .then(r => r.json())
-      .then(data => { if (data?.id) setTemplateId(data.id); else setTemplateId(null); })
+      .then(data => {
+        console.log("[NewCaseModal] template fetch result:", { visaSubclass, data });
+        if (data?.id) setTemplateId(data.id); else setTemplateId(null);
+      })
       .catch(() => {}); // silently ignore — template is optional
   }, [visaSubclass]);
 
@@ -315,6 +318,13 @@ export function NewCaseModal({ isOpen, onClose, prefillClientId, prefillSponsorI
         resolvedSponsorId = selectedSponsor.id;
       }
     }
+
+    console.log("[NewCaseModal] submitting case:", {
+      visaSubclass,
+      templateId,
+      hasClientId: !isNewClient && !!selectedClient?.id,
+      hasNewClient: isNewClient,
+    });
 
     const res = await fetch("/api/cases/create", {
       method: "POST",
