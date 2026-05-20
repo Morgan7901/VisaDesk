@@ -66,6 +66,22 @@ export const PERMISSIONS: PermMatrix = {
   },
 };
 
+// ── AI generation monthly limits by plan ────────────────────────────────────
+
+export const AI_GENERATION_LIMITS: Record<string, number> = {
+  starter:      50,
+  professional: 200,
+  firm:         9999,
+};
+
+/**
+ * Returns the monthly AI generation limit for the given plan name.
+ * Falls back to the starter limit for unknown plan values.
+ */
+export function aiGenerationLimit(plan: string): number {
+  return AI_GENERATION_LIMITS[plan] ?? AI_GENERATION_LIMITS.starter;
+}
+
 /**
  * Returns true if `role` has at least the given `requiredLevel` on `resource`.
  * "full" satisfies both "full" and "view". "view" satisfies only "view".

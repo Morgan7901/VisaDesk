@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { aiGenerationLimit } from "@/lib/permissions";
 import { NextRequest, NextResponse } from "next/server";
 
 // ── Context helpers ───────────────────────────────────────────────────────────
@@ -395,7 +396,51 @@ export async function POST(
     return NextResponse.json({ error: "documentType is required" }, { status: 400 });
   }
 
-  // Fetch context
+  // ── Fetch profile + firm for usage enforcement ──────────────────────────────
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("id, firm_id")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.firm_id) {
+    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
+
+  const { data: firmRow } = await supabaseAdmin
+    .from("firms")
+    .select("plan")
+    .eq("id", profile.firm_id)
+    .single();
+
+  const plan = (firmRow as { plan?: string } | null)?.plan ?? "starter";
+  const limit = aiGenerationLimit(plan);
+
+  // Count this calendar month's usage
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  const { count } = await supabaseAdmin
+    .from("ai_usage")
+    .select("id", { count: "exact", head: true })
+    .eq("firm_id", profile.firm_id)
+    .gte("created_at", startOfMonth.toISOString());
+
+  const used = count ?? 0;
+
+  if (used >= limit) {
+    return NextResponse.json(
+      {
+        error: `Monthly AI generation limit reached (${limit}/month on the ${plan} plan). Please upgrade to generate more documents.`,
+        used,
+        limit,
+      },
+      { status: 429 }
+    );
+  }
+
+  // ── Fetch case context ──────────────────────────────────────────────────────
   const ctx = await fetchContext(params.id);
   if (!ctx) {
     return NextResponse.json({ error: "Case not found" }, { status: 404 });
@@ -403,7 +448,7 @@ export async function POST(
 
   const userPrompt = buildUserPrompt(documentType, ctx);
 
-  // Call Anthropic API with streaming
+  // ── Call Anthropic API with streaming ───────────────────────────────────────
   const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -412,7 +457,7 @@ export async function POST(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-opus-4-5-20251101",
+      model: "claude-sonnet-4-20250514",
       max_tokens: 2000,
       stream: true,
       system: SYSTEM_PROMPT,
@@ -434,9 +479,13 @@ export async function POST(
     );
   }
 
-  // Parse Anthropic SSE → emit raw text chunks to the client
+  // ── Parse Anthropic SSE → emit raw text chunks to the client ───────────────
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
+
+  // Capture token counts from SSE events for usage tracking
+  let tokensInput = 0;
+  let tokensOutput = 0;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -460,8 +509,22 @@ export async function POST(
             try {
               const parsed = JSON.parse(data) as {
                 type: string;
+                message?: { usage?: { input_tokens?: number } };
+                usage?: { output_tokens?: number };
                 delta?: { type: string; text?: string };
               };
+
+              // Capture input token count from message_start
+              if (parsed.type === "message_start" && parsed.message?.usage?.input_tokens) {
+                tokensInput = parsed.message.usage.input_tokens;
+              }
+
+              // Capture output token count from message_delta
+              if (parsed.type === "message_delta" && parsed.usage?.output_tokens) {
+                tokensOutput = parsed.usage.output_tokens;
+              }
+
+              // Forward text to client
               if (
                 parsed.type === "content_block_delta" &&
                 parsed.delta?.type === "text_delta" &&
@@ -476,6 +539,21 @@ export async function POST(
         }
       } finally {
         controller.close();
+
+        // Insert usage record after stream completes (fire-and-forget is fine)
+        supabaseAdmin
+          .from("ai_usage")
+          .insert({
+            firm_id: profile.firm_id,
+            profile_id: profile.id,
+            case_id: params.id,
+            document_type: documentType,
+            tokens_input: tokensInput || null,
+            tokens_output: tokensOutput || null,
+          })
+          .then(({ error }) => {
+            if (error) console.error("[ai/generate] failed to insert ai_usage:", error.message);
+          });
       }
     },
   });
@@ -484,6 +562,7 @@ export async function POST(
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "X-Document-Title": encodeURIComponent(DOC_TITLES[documentType] ?? documentType),
+      "X-Remaining-Generations": String(Math.max(0, limit - used - 1)),
       "Cache-Control": "no-cache",
     },
   });

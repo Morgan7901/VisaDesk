@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import {
   AlertCircle,
@@ -12,6 +12,7 @@ import {
   Loader2,
   Save,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { generateWordDoc } from "@/lib/wordGenerator";
@@ -285,6 +286,22 @@ export function AITools({
   const selectedCard = docCards.find((c) => c.type === selectedType);
   const today = format(new Date(), "d MMMM yyyy"); // "20 May 2026"
 
+  // ── Usage tracking ─────────────────────────────────────────────────────────
+  const [usage, setUsage] = useState<{ used: number; limit: number; remaining: number; plan: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/ai/usage")
+      .then((r) => r.json())
+      .then((json) => {
+        if (typeof json.used === "number") {
+          setUsage(json as { used: number; limit: number; remaining: number; plan: string });
+        }
+      })
+      .catch(() => { /* silently ignore — usage indicator is non-critical */ });
+  }, []);
+
+  const limitReached = usage !== null && usage.remaining <= 0;
+
   // ── Generation ─────────────────────────────────────────────────────────────
 
   async function handleGenerate(docType: string) {
@@ -304,6 +321,22 @@ export function AITools({
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error((json as { error?: string }).error ?? "Generation failed");
+      }
+
+      // Read the remaining count from the response header and update usage state
+      const remainingHeader = res.headers.get("X-Remaining-Generations");
+      if (remainingHeader !== null && usage) {
+        const remaining = parseInt(remainingHeader, 10);
+        setUsage((prev) =>
+          prev ? { ...prev, used: prev.limit - remaining, remaining } : prev
+        );
+      } else if (usage) {
+        // Optimistically decrement if header not available
+        setUsage((prev) =>
+          prev
+            ? { ...prev, used: prev.used + 1, remaining: Math.max(0, prev.remaining - 1) }
+            : prev
+        );
       }
 
       const reader = res.body!.getReader();
@@ -400,14 +433,37 @@ export function AITools({
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div className="flex items-center gap-2">
-        <Sparkles className="h-5 w-5 text-slate-500" />
-        <div>
-          <h2 className="text-base font-semibold text-slate-800">AI Document Generator</h2>
-          <p className="text-sm text-slate-500">
-            SC-{caseContext.visa_subclass} · {client.full_name}
-          </p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-slate-500" />
+          <div>
+            <h2 className="text-base font-semibold text-slate-800">AI Document Generator</h2>
+            <p className="text-sm text-slate-500">
+              SC-{caseContext.visa_subclass} · {client.full_name}
+            </p>
+          </div>
         </div>
+
+        {/* Usage indicator */}
+        {usage && (
+          <div
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
+              limitReached
+                ? "border-red-200 bg-red-50 text-red-700"
+                : usage.remaining <= Math.ceil(usage.limit * 0.1)
+                ? "border-amber-200 bg-amber-50 text-amber-700"
+                : "border-slate-200 bg-slate-50 text-slate-600"
+            )}
+          >
+            <Zap className="h-3 w-3 shrink-0" />
+            {limitReached ? (
+              <span>Limit reached — {usage.used}/{usage.limit} this month</span>
+            ) : (
+              <span>{usage.used}/{usage.limit} generations used this month</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Two-column layout */}
@@ -422,8 +478,8 @@ export function AITools({
             <button
               key={card.type}
               type="button"
-              onClick={() => !generating && handleGenerate(card.type)}
-              disabled={generating}
+              onClick={() => !generating && !limitReached && handleGenerate(card.type)}
+              disabled={generating || limitReached}
               className={cn(
                 "w-full rounded-lg border p-3.5 text-left transition-all",
                 selectedType === card.type
@@ -470,13 +526,27 @@ export function AITools({
           {/* Empty state */}
           {!selectedType && !generating && (
             <div className="flex min-h-[400px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white">
-              <Sparkles className="mb-3 h-8 w-8 text-slate-200" />
-              <p className="text-sm font-medium text-slate-400">
-                Select a document type to generate
-              </p>
-              <p className="mt-1 text-xs text-slate-300">
-                AI-drafted, ready for your review
-              </p>
+              {limitReached ? (
+                <>
+                  <Zap className="mb-3 h-8 w-8 text-red-300" />
+                  <p className="text-sm font-medium text-red-500">
+                    Monthly generation limit reached
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Upgrade your plan to generate more documents
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mb-3 h-8 w-8 text-slate-200" />
+                  <p className="text-sm font-medium text-slate-400">
+                    Select a document type to generate
+                  </p>
+                  <p className="mt-1 text-xs text-slate-300">
+                    AI-drafted, ready for your review
+                  </p>
+                </>
+              )}
             </div>
           )}
 
