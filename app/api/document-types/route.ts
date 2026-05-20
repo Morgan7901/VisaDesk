@@ -13,21 +13,60 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const visaSubclass = searchParams.get("visaSubclass");
 
-  let query = supabaseAdmin
-    .from("document_types")
-    .select("id, label, is_required, portal_upload, description")
-    .order("label");
+  console.log("[document-types] GET params:", { visaSubclass });
+
+  let documentTypes: unknown[] = [];
 
   if (visaSubclass) {
-    // Match exact visa subclass OR null (applies to all)
-    query = query.or(`visa_subclass.eq.${visaSubclass},visa_subclass.is.null`);
+    // Run two separate queries and merge — avoids any edge-cases with .or() + is.null
+    const [{ data: exact, error: exactErr }, { data: universal, error: universalErr }] =
+      await Promise.all([
+        supabaseAdmin
+          .from("document_types")
+          .select("id, label, is_required, portal_upload, description")
+          .eq("visa_subclass", visaSubclass)
+          .order("label"),
+        supabaseAdmin
+          .from("document_types")
+          .select("id, label, is_required, portal_upload, description")
+          .is("visa_subclass", null)
+          .order("label"),
+      ]);
+
+    if (exactErr) {
+      console.error("[document-types] exact query error:", exactErr.message);
+      return NextResponse.json({ error: exactErr.message }, { status: 500 });
+    }
+    if (universalErr) {
+      console.error("[document-types] universal query error:", universalErr.message);
+      return NextResponse.json({ error: universalErr.message }, { status: 500 });
+    }
+
+    documentTypes = [
+      ...(exact ?? []),
+      ...(universal ?? []),
+    ].sort((a: {label:string}, b: {label:string}) => a.label.localeCompare(b.label));
+
+    console.log("[document-types] results:", {
+      visaSubclass,
+      exactCount: exact?.length ?? 0,
+      universalCount: universal?.length ?? 0,
+      total: documentTypes.length,
+    });
+  } else {
+    // No subclass filter — return all
+    const { data, error } = await supabaseAdmin
+      .from("document_types")
+      .select("id, label, is_required, portal_upload, description")
+      .order("label");
+
+    if (error) {
+      console.error("[document-types] all query error:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    documentTypes = data ?? [];
+    console.log("[document-types] returning all:", documentTypes.length);
   }
 
-  const { data, error } = await query;
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ documentTypes: data ?? [] });
+  return NextResponse.json({ documentTypes });
 }

@@ -40,6 +40,17 @@ async function ok<T>(
 async function seedWorkflowTemplates() {
   console.log("\n── Workflow Templates ──");
 
+  // Skip if already seeded (workflow_templates has unique constraint on visa_subclass for firm_id=null)
+  const { count: existing } = await sb
+    .from("workflow_templates")
+    .select("*", { count: "exact", head: true })
+    .is("firm_id", null);
+
+  if ((existing ?? 0) >= 6) {
+    console.log(`  ✓ workflow_templates: already seeded (${existing} system templates), skipping`);
+    return;
+  }
+
   // IDs
   const T500 = uuid(), T482 = uuid(), T820 = uuid(),
         T309 = uuid(), T485 = uuid(), T600 = uuid();
@@ -389,6 +400,18 @@ async function seed600Workflow(tmpl: string) {
 async function seedCaseTemplates() {
   console.log("\n── Case Templates ──");
 
+  // Skip if already seeded
+  const { count: existingCt } = await sb
+    .from("case_templates")
+    .select("*", { count: "exact", head: true })
+    .is("firm_id", null)
+    .eq("is_system_default", true);
+
+  if ((existingCt ?? 0) >= 6) {
+    console.log(`  ✓ case_templates: already seeded (${existingCt} system templates), skipping`);
+    return;
+  }
+
   const T500=uuid(),T482=uuid(),T820=uuid(),T309=uuid(),T485=uuid(),T600=uuid();
 
   await ok("case_templates", sb.from("case_templates").insert([
@@ -688,7 +711,29 @@ async function seed600CaseTemplate(tmpl: string) {
 async function seedDocumentTypes() {
   console.log("\n── Document Types ──");
 
-  // Check what's already seeded so we don't duplicate
+  // Safe clear: only delete rows not referenced by any case_documents.
+  // This prevents FK violations while ensuring the reference data is clean.
+  const { count: referencedCount } = await sb
+    .from("case_documents")
+    .select("*", { count: "exact", head: true })
+    .not("document_type_id", "is", null);
+
+  if ((referencedCount ?? 0) === 0) {
+    // No live FK references — safe to wipe and re-insert everything cleanly
+    const { error: delErr } = await sb
+      .from("document_types")
+      .delete()
+      .neq("id", "00000000-0000-0000-0000-000000000000");
+    if (delErr) {
+      console.error("  ✗ Failed to clear document_types:", delErr.message);
+    } else {
+      console.log("  ✓ Cleared document_types (no FK references found)");
+    }
+  } else {
+    console.log(`  ℹ ${referencedCount} case_documents reference document_types — skipping clear`);
+  }
+
+  // Re-check what's already in the table (in case clear was skipped)
   const { data: existing } = await sb.from("document_types").select("visa_subclass");
   const seeded = new Set((existing ?? []).map((r: {visa_subclass: string}) => r.visa_subclass));
 
