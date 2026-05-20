@@ -3,6 +3,123 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { aiGenerationLimit } from "@/lib/permissions";
 import { NextRequest, NextResponse } from "next/server";
 
+// ── Document attachment helpers ───────────────────────────────────────────────
+
+interface DocAttachment {
+  label: string;
+  base64: string;
+  mediaType: "application/pdf" | "image/jpeg" | "image/png";
+}
+
+async function readCaseDocuments(
+  caseId: string,
+  relevantLabels: string[]
+): Promise<DocAttachment[]> {
+  if (relevantLabels.length === 0) return [];
+
+  // Fetch documents with matching labels and uploaded/approved status
+  const { data: docs } = await supabaseAdmin
+    .from("case_documents")
+    .select("id, label, storage_path, file_name, file_size, status")
+    .eq("case_id", caseId)
+    .in("status", ["uploaded", "approved"])
+    .not("storage_path", "is", null);
+
+  if (!docs || docs.length === 0) return [];
+
+  const matches = docs.filter((d) =>
+    relevantLabels.some((rel) =>
+      d.label.toLowerCase().includes(rel.toLowerCase()) ||
+      rel.toLowerCase().includes(d.label.toLowerCase())
+    )
+  );
+
+  const results: DocAttachment[] = [];
+
+  for (const doc of matches) {
+    if (!doc.storage_path) continue;
+    // Skip files over 4MB
+    if (doc.file_size && doc.file_size > 4_000_000) continue;
+
+    // Determine media type from extension
+    const ext = (doc.file_name ?? doc.storage_path).split(".").pop()?.toLowerCase();
+    let mediaType: DocAttachment["mediaType"] | null = null;
+    if (ext === "pdf") mediaType = "application/pdf";
+    else if (ext === "jpg" || ext === "jpeg") mediaType = "image/jpeg";
+    else if (ext === "png") mediaType = "image/png";
+    else continue; // skip unsupported types
+
+    try {
+      const { data: blob, error } = await supabaseAdmin.storage
+        .from("case-documents")
+        .download(doc.storage_path);
+
+      if (error || !blob) continue;
+
+      const arrayBuffer = await blob.arrayBuffer();
+      const base64 = Buffer.from(arrayBuffer).toString("base64");
+      results.push({ label: doc.label, base64, mediaType });
+    } catch {
+      // Never throw — silently skip failed downloads
+      continue;
+    }
+  }
+
+  return results;
+}
+
+async function fetchCaseFieldValues(caseId: string): Promise<Record<string, unknown>> {
+  const { data } = await supabaseAdmin
+    .from("case_field_values")
+    .select("field_key, value")
+    .eq("case_id", caseId);
+
+  const map: Record<string, unknown> = {};
+  for (const row of data ?? []) {
+    try {
+      map[row.field_key] = typeof row.value === "string" ? JSON.parse(row.value) : row.value;
+    } catch {
+      map[row.field_key] = row.value;
+    }
+  }
+  return map;
+}
+
+// ── Document relevance map ────────────────────────────────────────────────────
+
+const DOCUMENT_LABELS: Record<string, string[]> = {
+  GS_FORM_RESPONSES: [
+    "Confirmation of Enrolment",
+    "Financial evidence",
+    "English language test results",
+    "Academic transcripts",
+    "Employment reference letters",
+    "National police clearance",
+    "OSHC insurance policy",
+  ],
+  GS_SUPPORTING_STATEMENT: [
+    "Confirmation of Enrolment",
+    "Financial evidence",
+    "English language test results",
+    "Academic transcripts",
+    "Employment reference letters",
+    "National police clearance",
+    "OSHC insurance policy",
+  ],
+  POSITION_DESCRIPTION: [
+    "Worker passport",
+    "Employment reference letters",
+    "Skills assessment certificate",
+    "English language evidence",
+  ],
+  LMT_SUMMARY: ["Labour market testing evidence"],
+  RELATIONSHIP_STATEMENT: [
+    "Joint financial evidence",
+    "Travel evidence",
+    "Photos",
+  ],
+};
+
 // ── Context helpers ───────────────────────────────────────────────────────────
 
 async function fetchContext(caseId: string) {
@@ -42,7 +159,8 @@ async function fetchContext(caseId: string) {
     .map((d) => `- ${d.label} (${d.status})`)
     .join("\n");
 
-  return { raw, client, sponsor, agent, firm, docList };
+  const fieldValues = await fetchCaseFieldValues(caseId);
+  return { raw, client, sponsor, agent, firm, docList, fieldValues };
 }
 
 // ── Prompt builders ───────────────────────────────────────────────────────────
@@ -52,7 +170,19 @@ const SYSTEM_PROMPT = `You are an expert Australian migration agent assistant wi
 type Ctx = Awaited<ReturnType<typeof fetchContext>>;
 
 function buildUserPrompt(documentType: string, ctx: NonNullable<Ctx>): string {
-  const { raw, client, sponsor, agent, firm, docList } = ctx;
+  const { raw, client, sponsor, agent, firm, docList, fieldValues } = ctx;
+
+  // Build field context block for all non-null values
+  const fieldContextLines: string[] = [];
+  for (const [key, val] of Object.entries(fieldValues)) {
+    if (val !== null && val !== undefined && val !== "" && val !== false) {
+      const label = key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      fieldContextLines.push(`  ${label}: ${Array.isArray(val) ? val.join(", ") : String(val)}`);
+    }
+  }
+  const fieldContext = fieldContextLines.length > 0
+    ? `\nCase overview fields recorded by the agent:\n${fieldContextLines.join("\n")}\n`
+    : "";
 
   const cn = client?.full_name ?? "[CLIENT NAME]";
   const nat = client?.nationality ?? "[NATIONALITY]";
@@ -94,9 +224,18 @@ Skills Assessment Body: ${skillsBody ?? "[TBC]"}`;
 Client: ${cn}
 Nationality: ${nat}
 Date of Birth: ${dob}
-Documents uploaded:
+${fieldContext}Documents uploaded:
 ${docList || "None uploaded yet."}
 Case notes: ${notes}
+${(fieldValues.course_name || fieldValues.education_provider || fieldValues.coe_number) ? `
+Enrolled course details:
+- Course: ${fieldValues.course_name ?? "[Not recorded]"}
+- Provider: ${fieldValues.education_provider ?? "[Not recorded]"}
+- CoE Number: ${fieldValues.coe_number ?? "[Not recorded]"}
+- Course dates: ${fieldValues.course_start_date ?? "[Not recorded]"} to ${fieldValues.course_end_date ?? "[Not recorded]"}
+- English test: ${fieldValues.english_test_type ?? "[Not recorded]"}, Overall: ${fieldValues.english_overall_score ?? "[Not recorded]"}
+- Funds available: ${fieldValues.funds_available ? "AUD " + String(fieldValues.funds_available) : "[Not recorded]"}
+- Funds source: ${fieldValues.funds_source ?? "[Not recorded]"}` : ""}
 
 CRITICAL: Each answer must be STRICTLY under 150 words. Written in first person. Specific and evidence-based.
 
@@ -125,9 +264,18 @@ Use [PLACEHOLDER] brackets where specific information is not available.`;
 Client: ${cn}
 Nationality: ${nat}
 Date of Birth: ${dob}
-Documents uploaded:
+${fieldContext}Documents uploaded:
 ${docList || "None uploaded yet."}
 Case notes: ${notes}
+${(fieldValues.course_name || fieldValues.education_provider || fieldValues.coe_number) ? `
+Enrolled course details:
+- Course: ${fieldValues.course_name ?? "[Not recorded]"}
+- Provider: ${fieldValues.education_provider ?? "[Not recorded]"}
+- CoE Number: ${fieldValues.coe_number ?? "[Not recorded]"}
+- Course dates: ${fieldValues.course_start_date ?? "[Not recorded]"} to ${fieldValues.course_end_date ?? "[Not recorded]"}
+- English test: ${fieldValues.english_test_type ?? "[Not recorded]"}, Overall: ${fieldValues.english_overall_score ?? "[Not recorded]"}
+- Funds available: ${fieldValues.funds_available ? "AUD " + String(fieldValues.funds_available) : "[Not recorded]"}
+- Funds source: ${fieldValues.funds_source ?? "[Not recorded]"}` : ""}
 
 This is a supplementary narrative document that expands on the form responses with more detailed evidence and context. Unlike the 150-word form responses, this document can be comprehensive.
 
@@ -164,6 +312,17 @@ Contact: ${sponsorContact}
 Stream: ${stream}
 Worker: ${cn}
 ${positionContext}
+${fieldContext}${(fieldValues.nominated_position || fieldValues.anzsco_code) ? `
+Position details from case overview:
+- Nominated Position: ${fieldValues.nominated_position ?? "[Not recorded]"}
+- ANZSCO Code: ${fieldValues.anzsco_code ?? "[Not recorded]"}
+- Annual Salary: ${fieldValues.salary_amount ? "AUD " + String(fieldValues.salary_amount) : "[Not recorded]"}
+- Work Location: ${fieldValues.work_location ?? "[Not recorded]"}
+- LMT Required: ${fieldValues.lmt_required ? "Yes" : "No"}
+- LMT Exempt Reason: ${fieldValues.lmt_exempt_reason ?? "N/A"}
+- LMT Outcome: ${fieldValues.lmt_outcome_summary ?? "[Not recorded]"}
+- Worker Qualifications: ${fieldValues.worker_qualification ?? "[Not recorded]"}
+- Worker Experience: ${fieldValues.worker_experience ?? "[Not recorded]"}` : ""}
 
 # Position Description — ${positionTitle ?? "[POSITION TITLE]"} (${anzscoCode ?? "[ANZSCO CODE]"})
 
@@ -196,6 +355,17 @@ Format as a formal business document.`;
 Employer: ${sponsorName}
 Stream: ${stream}
 ${positionContext}
+${fieldContext}${(fieldValues.nominated_position || fieldValues.anzsco_code) ? `
+Position details from case overview:
+- Nominated Position: ${fieldValues.nominated_position ?? "[Not recorded]"}
+- ANZSCO Code: ${fieldValues.anzsco_code ?? "[Not recorded]"}
+- Annual Salary: ${fieldValues.salary_amount ? "AUD " + String(fieldValues.salary_amount) : "[Not recorded]"}
+- Work Location: ${fieldValues.work_location ?? "[Not recorded]"}
+- LMT Required: ${fieldValues.lmt_required ? "Yes" : "No"}
+- LMT Exempt Reason: ${fieldValues.lmt_exempt_reason ?? "N/A"}
+- LMT Outcome: ${fieldValues.lmt_outcome_summary ?? "[Not recorded]"}
+- Worker Qualifications: ${fieldValues.worker_qualification ?? "[Not recorded]"}
+- Worker Experience: ${fieldValues.worker_experience ?? "[Not recorded]"}` : ""}
 
 # Labour Market Testing Summary — ${sponsorName}
 
@@ -232,6 +402,17 @@ Worker: ${cn}
 Stream: ${stream}
 Case ref: ${ref}
 ${positionContext}
+${fieldContext}${(fieldValues.nominated_position || fieldValues.anzsco_code) ? `
+Position details from case overview:
+- Nominated Position: ${fieldValues.nominated_position ?? "[Not recorded]"}
+- ANZSCO Code: ${fieldValues.anzsco_code ?? "[Not recorded]"}
+- Annual Salary: ${fieldValues.salary_amount ? "AUD " + String(fieldValues.salary_amount) : "[Not recorded]"}
+- Work Location: ${fieldValues.work_location ?? "[Not recorded]"}
+- LMT Required: ${fieldValues.lmt_required ? "Yes" : "No"}
+- LMT Exempt Reason: ${fieldValues.lmt_exempt_reason ?? "N/A"}
+- LMT Outcome: ${fieldValues.lmt_outcome_summary ?? "[Not recorded]"}
+- Worker Qualifications: ${fieldValues.worker_qualification ?? "[Not recorded]"}
+- Worker Experience: ${fieldValues.worker_experience ?? "[Not recorded]"}` : ""}
 
 Structure as a formal business letter:
 1. Subject line identifying the nomination
@@ -467,6 +648,10 @@ export async function POST(
     return NextResponse.json({ error: "Case not found" }, { status: 404 });
   }
 
+  // Read relevant documents for multi-modal generation
+  const relevantLabels = DOCUMENT_LABELS[documentType] ?? [];
+  const attachedDocs = await readCaseDocuments(params.id, relevantLabels);
+
   const userPrompt = buildUserPrompt(documentType, ctx);
 
   // ── Call Anthropic API with streaming ───────────────────────────────────────
@@ -482,7 +667,27 @@ export async function POST(
       max_tokens: 2000,
       stream: true,
       system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPrompt }],
+      messages: attachedDocs.length > 0
+        ? [{
+            role: "user" as const,
+            content: [
+              {
+                type: "text" as const,
+                text: userPrompt + "\n\nI have attached the uploaded documents for this case. Please read them carefully and use the specific details you find — course names, dates, fund amounts, test scores, employment details — to write a genuinely personalised document. Do not invent details not found in the documents or case data. If information is missing, use [PLACEHOLDER] and note what is needed.",
+              },
+              ...attachedDocs.map((doc) => ({
+                type: "document" as const,
+                source: {
+                  type: "base64" as const,
+                  media_type: doc.mediaType,
+                  data: doc.base64,
+                },
+                title: doc.label,
+                context: `This is the ${doc.label} uploaded for this visa application. Extract relevant information to personalise the document being generated.`,
+              })),
+            ],
+          }]
+        : [{ role: "user" as const, content: userPrompt }],
     }),
   });
 

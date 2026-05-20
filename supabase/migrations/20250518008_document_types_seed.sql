@@ -11,7 +11,7 @@ insert into document_types (visa_subclass, label, is_required, portal_upload) va
   ('500', 'Financial evidence (bank statements)',            true,  'client'),
   ('500', 'Health assessment (HAP)',                         true,  'client'),
   ('500', 'National police clearance',                       true,  'client'),
-  ('500', 'GTE statement',                                   true,  'client'),
+  ('500', 'GS Statement',                                    true,  'client'),
   ('500', 'Visa application form (Form 157A)',               true,  null);
 
 -- SC-482 Temporary Skill Shortage Visa

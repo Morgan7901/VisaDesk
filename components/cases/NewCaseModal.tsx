@@ -85,6 +85,7 @@ export function NewCaseModal({ isOpen, onClose, prefillClientId, prefillSponsorI
   const [visaSubclass, setVisaSubclass] = useState("");
   const [visaStream, setVisaStream] = useState("");
   const [notes, setNotes] = useState("");
+  const [templateId, setTemplateId] = useState<string | null>(null);
 
   // UI state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -183,7 +184,7 @@ export function NewCaseModal({ isOpen, onClose, prefillClientId, prefillSponsorI
       setSponsorQuery(""); setSponsorResults([]); setShowSponsorDropdown(false);
       setSelectedSponsor(null); setIsNewSponsor(false);
       setNewSponsor({ company_name: "", abn: "", contact_name: "", contact_email: "", contact_phone: "" });
-      setVisaSubclass(""); setVisaStream(""); setNotes("");
+      setVisaSubclass(""); setVisaStream(""); setNotes(""); setTemplateId(null);
       setError(null); setIsSubmitting(false);
       return;
     }
@@ -214,6 +215,15 @@ export function NewCaseModal({ isOpen, onClose, prefillClientId, prefillSponsorI
         .catch(() => {/* silent */});
     }
   }, [isOpen, prefillClientId, prefillSponsorId]);
+
+  // Fetch system default template when visa subclass changes
+  useEffect(() => {
+    if (!visaSubclass) { setTemplateId(null); return; }
+    fetch(`/api/case-templates/default?visa_subclass=${visaSubclass}`)
+      .then(r => r.json())
+      .then(data => { if (data?.id) setTemplateId(data.id); else setTemplateId(null); })
+      .catch(() => {}); // silently ignore — template is optional
+  }, [visaSubclass]);
 
   const selectClient = (c: ClientOption) => {
     setSelectedClient(c);
@@ -316,6 +326,7 @@ export function NewCaseModal({ isOpen, onClose, prefillClientId, prefillSponsorI
         visaStream: visaSubclass === "482" ? visaStream : undefined,
         notes: notes.trim() || undefined,
         sponsorId: resolvedSponsorId,
+        templateId: templateId ?? undefined,
       }),
     });
 

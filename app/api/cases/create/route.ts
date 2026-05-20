@@ -48,6 +48,7 @@ export async function POST(request: Request) {
     visaStream,
     notes,
     sponsorId,
+    templateId,
   }: {
     clientId?: string;
     newClient?: NewClientData;
@@ -55,6 +56,7 @@ export async function POST(request: Request) {
     visaStream?: string;
     notes?: string;
     sponsorId?: string;
+    templateId?: string;
   } = body;
 
   if (!visaSubclass) {
@@ -132,6 +134,7 @@ export async function POST(request: Request) {
         visa_stream: visaStream ?? null,
         notes: notes ?? null,
         status: "active",
+        template_id: templateId ?? null,
       })
       .select("id")
       .single();
@@ -146,7 +149,7 @@ export async function POST(request: Request) {
     const caseId = newCase.id;
 
     // 6. Resolve firm workflow template (clone global if not yet present)
-    let templateId: string | null = null;
+    let workflowTemplateId: string | null = null;
 
     const { data: existingTemplate } = await supabaseAdmin
       .from("workflow_templates")
@@ -156,7 +159,7 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (existingTemplate) {
-      templateId = existingTemplate.id;
+      workflowTemplateId = existingTemplate.id;
     } else {
       const { data: cloned, error: cloneErr } = await supabaseAdmin.rpc(
         "clone_workflow_for_firm",
@@ -164,17 +167,17 @@ export async function POST(request: Request) {
       );
 
       if (!cloneErr && cloned) {
-        templateId = cloned as string;
+        workflowTemplateId = cloned as string;
       }
       // If clone fails (no global template), proceed without workflow
     }
 
-    // 7. Seed stage + task progress if we have a template
-    if (templateId) {
+    // 7. Seed stage + task progress if we have a workflow template
+    if (workflowTemplateId) {
       const { data: stages } = await supabaseAdmin
         .from("workflow_stages")
         .select("id, stage_order")
-        .eq("template_id", templateId)
+        .eq("template_id", workflowTemplateId)
         .order("stage_order", { ascending: true });
 
       if (stages && stages.length > 0) {

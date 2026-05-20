@@ -19,6 +19,7 @@ import {
   CheckCircle,
   AlertCircle,
   Layers,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +27,7 @@ import {
   type TeamMember,
   type PendingInvitation,
 } from "@/components/settings/TeamSettings";
+import { TemplateSettings } from "@/components/settings/TemplateSettings";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -88,7 +90,7 @@ interface Props {
   showTeam?: boolean;
 }
 
-type Section = "firm" | "profile" | "workflow" | "team";
+type Section = "firm" | "profile" | "workflow" | "team" | "templates";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -947,10 +949,11 @@ function WorkflowTemplatesSection({
 // ─── Sidebar Nav ─────────────────────────────────────────────────────────────────
 
 const BASE_NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
-  { id: "firm",     label: "Firm Settings",     icon: <Building2 className="h-4 w-4" /> },
-  { id: "profile",  label: "My Profile",         icon: <User className="h-4 w-4" /> },
-  { id: "workflow", label: "Workflow Templates", icon: <GitBranch className="h-4 w-4" /> },
-  { id: "team",     label: "Team",               icon: <Users className="h-4 w-4" /> },
+  { id: "firm",      label: "Firm Settings",     icon: <Building2 className="h-4 w-4" /> },
+  { id: "profile",   label: "My Profile",         icon: <User className="h-4 w-4" /> },
+  { id: "workflow",  label: "Workflow Templates", icon: <GitBranch className="h-4 w-4" /> },
+  { id: "templates", label: "Case Templates",     icon: <FileText className="h-4 w-4" /> },
+  { id: "team",      label: "Team",               icon: <Users className="h-4 w-4" /> },
 ];
 
 // ─── Main Component ───────────────────────────────────────────────────────────────
@@ -1024,6 +1027,9 @@ export function SettingsPage({
             globalTemplates={globalsData}
             onTemplatesChange={setTemplatesData}
           />
+        )}
+        {section === "templates" && (
+          <TemplateSettings />
         )}
         {section === "team" && showTeam && (
           <TeamSettings

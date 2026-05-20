@@ -23,7 +23,8 @@ export function CaseTabs({
   const base = `/dashboard/cases/${caseId}`;
 
   const TABS: TabDef[] = [
-    { label: "Workflow",       suffix: "" },
+    { label: "Overview",       suffix: "" },
+    { label: "Workflow",       suffix: "/workflow" },
     { label: "Documents",      suffix: "/documents" },
     { label: "Communications", suffix: "/comms", badge: commCount },
     { label: "Trust",          suffix: "/trust" },

@@ -35,7 +35,7 @@ begin
   -- editable copies via clone_workflow_for_firm().
   insert into workflow_templates (id, firm_id, visa_subclass, label, description) values
     (v_tmpl_500, null, '500', 'Student Visa (Subclass 500)',
-     'Workflow for student visa applications including GTE assessment and CoE management.'),
+     'Workflow for student visa applications including GS assessment and CoE management.'),
     (v_tmpl_482, null, '482', 'Temporary Skill Shortage (Subclass 482)',
      'Workflow for TSS visa applications covering sponsorship, nomination, and visa stages.');
 
@@ -64,7 +64,7 @@ begin
   -- ── SC-500 Stage 2: Eligibility Assessment ────────────────
 
   insert into workflow_tasks (stage_id, task_order, label, is_required, trigger_type, requires_portal) values
-    (v_500_s2, 1, 'Assess genuine temporary entrant (GTE) criteria',      true,  null,               null),
+    (v_500_s2, 1, 'Assess Genuine Student (GS) criteria',                 true,  null,               null),
     (v_500_s2, 2, 'Confirm course enrolment and CoE details',             true,  null,               null),
     (v_500_s2, 3, 'Check English language requirement (IELTS/PTE/TOEFL)', true,  null,               null),
     (v_500_s2, 4, 'Assess financial capacity',                            true,  null,               null),
@@ -86,7 +86,7 @@ begin
 
   insert into workflow_tasks (stage_id, task_order, label, is_required, trigger_type, requires_portal) values
     (v_500_s4, 1, 'Prepare Form 157A student visa application',           true,  null,               null),
-    (v_500_s4, 2, 'Prepare GTE statement with client',                    true,  null,               'client'),
+    (v_500_s4, 2, 'Prepare GS Statement with client',                     true,  null,               'client'),
     (v_500_s4, 3, 'Complete health examinations and obtain HAP ID',       true,  null,               null),
     (v_500_s4, 4, 'Conduct final document review',                        true,  null,               null),
     (v_500_s4, 5, 'Obtain client sign-off on application',                true,  'send_email',       null);
