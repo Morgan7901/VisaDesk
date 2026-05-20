@@ -272,6 +272,28 @@ function Messages({
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // On mount, fetch existing messages from the API endpoint to ensure we
+  // have the latest — the SSR initialMessages may be stale if the portal
+  // page was served from Next.js's full-route cache (portal routes use URL
+  // params rather than auth cookies so Next may cache them aggressively).
+  // This also picks up any messages the agent sent while the client had
+  // the portal open before this component mounted.
+  useEffect(() => {
+    fetch(`/api/portal/${portalType}/${token}/messages`)
+      .then((r) => r.json())
+      .then((json: { messages?: PortalMessage[] }) => {
+        if (Array.isArray(json.messages)) {
+          setMessages(json.messages);
+          // Scroll to the bottom so the latest message is visible
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+        }
+      })
+      .catch((err) => {
+        // Silently fall back to initialMessages — user can still see SSR data
+        console.warn("[Messages] failed to refresh messages on mount:", err);
+      });
+  }, [token, portalType]);
+
   const send = async () => {
     if (!draft.trim()) return;
     setSending(true);

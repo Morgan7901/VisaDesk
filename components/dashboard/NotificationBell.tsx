@@ -4,7 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell } from "lucide-react";
 import { formatDistanceToNow, parseISO } from "date-fns";
-import { createClient } from "@/lib/supabase/client";
+// Use createBrowserClient directly — NOT the module-level singleton from
+// lib/supabase/client.ts. The singleton may be initialised before the auth
+// cookie has been written to the browser, so its session state is empty and
+// every query fires without an Authorization header → 403. A fresh instance
+// created at component mount reads the cookie at that moment, when we know
+// the user is already signed in (this component only renders inside the
+// authenticated dashboard layout).
+import { createBrowserClient } from "@supabase/ssr";
 import { useAuthStore } from "@/lib/stores/authStore";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +56,20 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // One fresh client per component mount — created lazily on first access.
+  // Using a ref so the same instance is shared between the fetch and the
+  // realtime subscription without re-creating it on every render.
+  const supabaseRef = useRef<ReturnType<typeof createBrowserClient> | null>(null);
+  function getSupabase() {
+    if (!supabaseRef.current) {
+      supabaseRef.current = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+    }
+    return supabaseRef.current;
+  }
+
   const unreadCount = notifications.filter((n) => !n.read_at).length;
   const badge = unreadCount > 9 ? "9+" : unreadCount > 0 ? String(unreadCount) : null;
 
@@ -60,21 +81,18 @@ export function NotificationBell() {
   // ── Fetch on mount ──────────────────────────────────────────────────────────
 
   const fetchNotifications = useCallback(async () => {
-    const supabase = createClient();
+    const supabase = getSupabase();
 
-    // Step 1 — confirm a session exists before querying. getSession() reads
-    // from cookies/localStorage without a network round-trip, so the JWT is
-    // guaranteed to be attached to any subsequent request. Without this gate,
-    // the query can fire before the singleton client has loaded the session,
-    // which means no Authorization header → Supabase returns 403.
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      console.log("[NotificationBell] no session — skipping fetch");
+    // Confirm a session exists before querying. getSession() reads from
+    // cookies/localStorage without a network round-trip.
+    const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr || !session) {
+      console.log("[NotificationBell] no session:", sessionErr?.message ?? "null session");
       return;
     }
 
     const userId = session.user.id;
-    console.log("[NotificationBell] fetching for user.id:", userId);
+    console.log("[NotificationBell] fetching notifications for user.id:", userId);
 
     const { data, error } = await supabase
       .from("notifications")
@@ -83,22 +101,29 @@ export function NotificationBell() {
       .order("created_at", { ascending: false })
       .limit(40);
 
-    console.log("[NotificationBell] fetch result — data:", data, "error:", error);
+    // Log the full error object so we can see exactly what Supabase returns
+    console.log("[NotificationBell] fetch result — data:", data, "error:", JSON.stringify(error));
+
+    if (error) {
+      console.error("[NotificationBell] query failed — code:", error.code, "message:", error.message, "details:", error.details, "hint:", error.hint);
+      return;
+    }
 
     if (data) setNotifications(data as Notification[]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // fetchNotifications is stable (empty dep array) so this fires exactly once on mount
   useEffect(() => {
     fetchNotifications();
-  }, [fetchNotifications]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Realtime: prepend new notifications as they arrive ─────────────────────
 
   useEffect(() => {
     if (!profile?.id) return;
     console.log("[NotificationBell] subscribing to realtime for profile_id:", profile.id);
-    const supabase = createClient();
+    const supabase = getSupabase();
     const channel = supabase
       .channel(`notifications-${profile.id}`)
       .on(
@@ -115,6 +140,7 @@ export function NotificationBell() {
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
 
   // ── Click outside to close ─────────────────────────────────────────────────
@@ -135,12 +161,10 @@ export function NotificationBell() {
   async function handleClick(n: Notification) {
     if (!n.read_at) {
       const now = new Date().toISOString();
-      // Optimistic update
       setNotifications((prev) =>
         prev.map((x) => (x.id === n.id ? { ...x, read_at: now } : x))
       );
-      const supabase = createClient();
-      await supabase
+      await getSupabase()
         .from("notifications")
         .update({ read_at: now })
         .eq("id", n.id);
@@ -157,12 +181,10 @@ export function NotificationBell() {
     const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.id);
     if (!unreadIds.length) return;
     const now = new Date().toISOString();
-    // Optimistic update
     setNotifications((prev) =>
       prev.map((n) => (unreadIds.includes(n.id) ? { ...n, read_at: now } : n))
     );
-    const supabase = createClient();
-    await supabase
+    await getSupabase()
       .from("notifications")
       .update({ read_at: now })
       .in("id", unreadIds);
@@ -224,7 +246,6 @@ export function NotificationBell() {
                     )}
                   >
                     <div className="flex items-start gap-3">
-                      {/* Type dot */}
                       <span
                         className={cn(
                           "mt-1.5 h-2 w-2 shrink-0 rounded-full",
