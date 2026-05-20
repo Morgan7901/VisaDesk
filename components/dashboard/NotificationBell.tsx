@@ -62,21 +62,24 @@ export function NotificationBell() {
   const fetchNotifications = useCallback(async () => {
     const supabase = createClient();
 
-    // Always resolve the authenticated user from the live session — never rely
-    // on the store alone, as the browser client's JWT may not be set yet when
-    // the component first mounts (timing issue with the singleton).
-    const { data: { user }, error: authErr } = await supabase.auth.getUser();
-    if (authErr || !user) {
-      console.log("[NotificationBell] getUser failed or no session:", authErr?.message);
+    // Step 1 — confirm a session exists before querying. getSession() reads
+    // from cookies/localStorage without a network round-trip, so the JWT is
+    // guaranteed to be attached to any subsequent request. Without this gate,
+    // the query can fire before the singleton client has loaded the session,
+    // which means no Authorization header → Supabase returns 403.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      console.log("[NotificationBell] no session — skipping fetch");
       return;
     }
 
-    console.log("[NotificationBell] fetching for user.id:", user.id);
+    const userId = session.user.id;
+    console.log("[NotificationBell] fetching for user.id:", userId);
 
     const { data, error } = await supabase
       .from("notifications")
       .select("*")
-      .eq("profile_id", user.id)
+      .eq("profile_id", userId)
       .order("created_at", { ascending: false })
       .limit(40);
 
