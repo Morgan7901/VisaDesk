@@ -60,24 +60,41 @@ export function NotificationBell() {
   // ── Fetch on mount ──────────────────────────────────────────────────────────
 
   const fetchNotifications = useCallback(async () => {
-    if (!profile?.id) return;
     const supabase = createClient();
-    const { data } = await supabase
+
+    // Always resolve the authenticated user from the live session — never rely
+    // on the store alone, as the browser client's JWT may not be set yet when
+    // the component first mounts (timing issue with the singleton).
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user) {
+      console.log("[NotificationBell] getUser failed or no session:", authErr?.message);
+      return;
+    }
+
+    console.log("[NotificationBell] fetching for user.id:", user.id);
+
+    const { data, error } = await supabase
       .from("notifications")
-      .select("id, type, title, body, url, read_at, created_at")
+      .select("*")
+      .eq("profile_id", user.id)
       .order("created_at", { ascending: false })
       .limit(40);
-    if (data) setNotifications(data as Notification[]);
-  }, [profile?.id]);
 
+    console.log("[NotificationBell] fetch result — data:", data, "error:", error);
+
+    if (data) setNotifications(data as Notification[]);
+  }, []);
+
+  // fetchNotifications is stable (empty dep array) so this fires exactly once on mount
   useEffect(() => {
     fetchNotifications();
-  }, [fetchNotifications]);
+  }, [fetchNotifications]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Realtime: prepend new notifications as they arrive ─────────────────────
 
   useEffect(() => {
     if (!profile?.id) return;
+    console.log("[NotificationBell] subscribing to realtime for profile_id:", profile.id);
     const supabase = createClient();
     const channel = supabase
       .channel(`notifications-${profile.id}`)
