@@ -15,6 +15,8 @@ async function fetchContext(caseId: string) {
     .select(
       `id, ref_number, visa_subclass, visa_stream, status, notes,
        lodgement_date, grant_date, visa_expiry, trn,
+       position_title, anzsco_code, salary, work_location,
+       lmt_exempt, lmt_exempt_reason, skills_assessment_body,
        clients!client_id(full_name, nationality, date_of_birth, passport_number, passport_expiry),
        sponsor:sponsors!sponsor_id(company_name, abn, contact_name, sbs_status),
        agent:profiles!agent_id(id, full_name, email, mara_number),
@@ -67,6 +69,23 @@ function buildUserPrompt(documentType: string, ctx: NonNullable<Ctx>): string {
   const sponsorName = sponsor?.company_name ?? "[EMPLOYER]";
   const sponsorAbn = sponsor?.abn ?? "[ABN]";
   const sponsorContact = sponsor?.contact_name ?? "[CONTACT]";
+
+  // Position details (for 482/186/494 nominations)
+  const rawPos = raw as Record<string, unknown>;
+  const positionTitle = (rawPos.position_title as string | null) ?? null;
+  const anzscoCode = (rawPos.anzsco_code as string | null) ?? null;
+  const salary = (rawPos.salary as number | null) ?? null;
+  const workLocation = (rawPos.work_location as string | null) ?? null;
+  const lmtExempt = (rawPos.lmt_exempt as boolean | null) ?? false;
+  const lmtExemptReason = (rawPos.lmt_exempt_reason as string | null) ?? null;
+  const skillsBody = (rawPos.skills_assessment_body as string | null) ?? null;
+
+  const positionContext = `Position Title: ${positionTitle ?? "[TBC]"}
+ANZSCO Code: ${anzscoCode ?? "[TBC]"}
+Annual Salary: ${salary ? `AUD ${salary.toLocaleString()}` : "[TBC — must meet TSMIT of $73,150]"}
+Work Location: ${workLocation ?? "[TBC]"}
+LMT Exempt: ${lmtExempt ? `Yes${lmtExemptReason ? ` (${lmtExemptReason})` : ""}` : "No"}
+Skills Assessment Body: ${skillsBody ?? "[TBC]"}`;
 
   switch (documentType) {
     case "GS_FORM_RESPONSES":
@@ -144,8 +163,9 @@ ABN: ${sponsorAbn}
 Contact: ${sponsorContact}
 Stream: ${stream}
 Worker: ${cn}
+${positionContext}
 
-# Position Description — [POSITION TITLE] ([ANZSCO CODE])
+# Position Description — ${positionTitle ?? "[POSITION TITLE]"} (${anzscoCode ?? "[ANZSCO CODE]"})
 
 ## Employer Details
 Company name, ABN, address placeholder, industry
@@ -174,8 +194,8 @@ Format as a formal business document.`;
       return `Generate a Labour Market Testing compliance summary document for an SC-482 nomination.
 
 Employer: ${sponsorName}
-Position: [from notes or placeholder]
 Stream: ${stream}
+${positionContext}
 
 # Labour Market Testing Summary — ${sponsorName}
 
@@ -211,6 +231,7 @@ ABN: ${sponsorAbn}
 Worker: ${cn}
 Stream: ${stream}
 Case ref: ${ref}
+${positionContext}
 
 Structure as a formal business letter:
 1. Subject line identifying the nomination

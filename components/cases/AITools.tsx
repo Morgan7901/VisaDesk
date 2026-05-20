@@ -64,6 +64,11 @@ export interface AIToolsProps {
     content: string;
     created_at: string;
   }[];
+  positionDetails?: {
+    position_title?: string | null;
+    anzsco_code?: string | null;
+    salary?: number | null;
+  };
 }
 
 interface DocCardDef {
@@ -258,13 +263,43 @@ const DOC_TITLES: Record<string, string> = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+function getWarnings(
+  docType: string,
+  client: AIToolsProps["client"],
+  sponsor: AIToolsProps["sponsor"],
+  caseContext: AIToolsProps["caseContext"],
+  documents: AIToolsProps["documents"],
+  positionDetails: AIToolsProps["positionDetails"],
+): string[] {
+  const warnings: string[] = [];
+  if (docType === "GS_FORM_RESPONSES" || docType === "GS_SUPPORTING_STATEMENT") {
+    if (!client.nationality) warnings.push("Client nationality is missing");
+    if (documents.length === 0) warnings.push("No documents have been uploaded to this case");
+    if (!caseContext.notes) warnings.push("No case notes have been added");
+  }
+  if (
+    docType === "POSITION_DESCRIPTION" ||
+    docType === "LMT_SUMMARY" ||
+    docType === "NOMINATION_COVER_LETTER"
+  ) {
+    if (!positionDetails?.position_title) warnings.push("Position title is missing");
+    if (!positionDetails?.anzsco_code) warnings.push("ANZSCO code is missing");
+    if (!positionDetails?.salary) warnings.push("Salary is missing");
+    if (!sponsor) warnings.push("No sponsor linked to this case");
+  }
+  return warnings;
+}
+
 export function AITools({
   caseId,
   caseContext,
   client,
+  sponsor,
   firm,
   agent,
+  documents,
   aiDocuments: initialAiDocs,
+  positionDetails,
 }: AIToolsProps) {
   const docCards = getDocCards(caseContext.visa_subclass);
 
@@ -277,6 +312,8 @@ export function AITools({
   const [saving, setSaving] = useState(false);
   const [aiDocs, setAiDocs] = useState(initialAiDocs);
   const [savedDocsOpen, setSavedDocsOpen] = useState(true);
+  const [pendingCard, setPendingCard] = useState<string | null>(null);
+  const [warningsAcknowledged, setWarningsAcknowledged] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
 
   const isGsForm = selectedType === "GS_FORM_RESPONSES";
@@ -286,8 +323,26 @@ export function AITools({
   const selectedCard = docCards.find((c) => c.type === selectedType);
   const today = format(new Date(), "d MMMM yyyy"); // "20 May 2026"
 
+  // Build a map of docType → most recently saved doc
+  const savedDocsByType = aiDocs.reduce<Record<string, (typeof aiDocs)[0]>>((acc, doc) => {
+    // aiDocs is DESC by created_at, so first occurrence wins (most recent)
+    if (!acc[doc.document_type]) acc[doc.document_type] = doc;
+    return acc;
+  }, {});
+
+  // Current warnings for the selected type
+  const currentWarnings =
+    selectedType && !warningsAcknowledged
+      ? getWarnings(selectedType, client, sponsor, caseContext, documents, positionDetails)
+      : [];
+
   // ── Usage tracking ─────────────────────────────────────────────────────────
   const [usage, setUsage] = useState<{ used: number; limit: number; remaining: number; plan: string } | null>(null);
+
+  // Reset warnings acknowledged when selected type changes
+  useEffect(() => {
+    setWarningsAcknowledged(false);
+  }, [selectedType]);
 
   useEffect(() => {
     fetch("/api/ai/usage")
@@ -302,9 +357,48 @@ export function AITools({
 
   const limitReached = usage !== null && usage.remaining <= 0;
 
+  // ── Card click handler ─────────────────────────────────────────────────────
+
+  function handleCardClick(cardType: string) {
+    if (generating || limitReached) return;
+
+    const hasSaved = !!savedDocsByType[cardType];
+
+    // If card already selected and clicking again, toggle pending chooser
+    if (selectedType === cardType && hasSaved) {
+      setPendingCard(pendingCard === cardType ? null : cardType);
+      return;
+    }
+
+    if (hasSaved) {
+      // Show chooser
+      setSelectedType(cardType);
+      setWarningsAcknowledged(false);
+      setPendingCard(cardType);
+      return;
+    }
+
+    // No saved version — check warnings first
+    setWarningsAcknowledged(false);
+    const warnings = getWarnings(cardType, client, sponsor, caseContext, documents, positionDetails);
+    if (warnings.length > 0) {
+      setSelectedType(cardType);
+      setContent("");
+      setError(null);
+      setPendingCard(null);
+      // warningsAcknowledged is false, so warning banner will show
+      return;
+    }
+
+    // No warnings, generate immediately
+    setPendingCard(null);
+    handleGenerate(cardType);
+  }
+
   // ── Generation ─────────────────────────────────────────────────────────────
 
   async function handleGenerate(docType: string) {
+    setPendingCard(null);
     setSelectedType(docType);
     setContent("");
     setError(null);
@@ -474,51 +568,81 @@ export function AITools({
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400 mb-3">
             Select document
           </p>
-          {docCards.map((card) => (
-            <button
-              key={card.type}
-              type="button"
-              onClick={() => !generating && !limitReached && handleGenerate(card.type)}
-              disabled={generating || limitReached}
-              className={cn(
-                "w-full rounded-lg border p-3.5 text-left transition-all",
-                selectedType === card.type
-                  ? "border-[#0f172a] bg-[#0f172a] text-white shadow-md"
-                  : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
-              )}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p
-                    className={cn(
-                      "text-sm font-semibold leading-snug",
-                      selectedType === card.type ? "text-white" : "text-slate-800"
+          {docCards.map((card) => {
+            const savedDoc = savedDocsByType[card.type];
+            const isSelected = selectedType === card.type;
+            const isPending = pendingCard === card.type;
+            return (
+              <div key={card.type}>
+                <button
+                  type="button"
+                  onClick={() => handleCardClick(card.type)}
+                  disabled={generating || limitReached}
+                  className={cn(
+                    "w-full rounded-lg border p-3.5 text-left transition-all",
+                    isSelected
+                      ? "border-[#0f172a] bg-[#0f172a] text-white shadow-md"
+                      : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={cn(
+                          "text-sm font-semibold leading-snug",
+                          isSelected ? "text-white" : "text-slate-800"
+                        )}
+                      >
+                        {card.name}
+                      </p>
+                      <p
+                        className={cn(
+                          "mt-1 text-xs leading-relaxed",
+                          isSelected ? "text-slate-300" : "text-slate-500"
+                        )}
+                      >
+                        {card.description}
+                      </p>
+                      {savedDoc && (
+                        <p className={cn("mt-1.5 text-[10px]", isSelected ? "text-slate-400" : "text-slate-400")}>
+                          Saved · {format(new Date(savedDoc.created_at), "d MMM yyyy")}
+                        </p>
+                      )}
+                    </div>
+                    {generating && isSelected ? (
+                      <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-white" />
+                    ) : (
+                      <Sparkles
+                        className={cn(
+                          "mt-0.5 h-4 w-4 shrink-0",
+                          isSelected ? "text-slate-300" : "text-slate-300"
+                        )}
+                      />
                     )}
-                  >
-                    {card.name}
-                  </p>
-                  <p
-                    className={cn(
-                      "mt-1 text-xs leading-relaxed",
-                      selectedType === card.type ? "text-slate-300" : "text-slate-500"
-                    )}
-                  >
-                    {card.description}
-                  </p>
-                </div>
-                {generating && selectedType === card.type ? (
-                  <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-white" />
-                ) : (
-                  <Sparkles
-                    className={cn(
-                      "mt-0.5 h-4 w-4 shrink-0",
-                      selectedType === card.type ? "text-slate-300" : "text-slate-300"
-                    )}
-                  />
+                  </div>
+                </button>
+                {/* Chooser buttons — shown when card has saved version and is pending */}
+                {isPending && savedDoc && !generating && (
+                  <div className="mt-1 flex gap-2 px-1">
+                    <button
+                      type="button"
+                      onClick={() => { loadSaved(savedDoc); setPendingCard(null); }}
+                      className="flex-1 border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      Load Saved
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setPendingCard(null); setWarningsAcknowledged(false); const w = getWarnings(card.type, client, sponsor, caseContext, documents, positionDetails); if (w.length > 0) { setSelectedType(card.type); setContent(""); setError(null); } else { handleGenerate(card.type); } }}
+                      className="flex-1 border border-[#0f172a] bg-[#0f172a] px-3 py-2 text-xs font-medium text-white hover:bg-slate-800 transition-colors"
+                    >
+                      Generate New
+                    </button>
+                  </div>
                 )}
               </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
 
         {/* ── Right: content area ───────────────────────────────────────────── */}
@@ -547,6 +671,40 @@ export function AITools({
                   </p>
                 </>
               )}
+            </div>
+          )}
+
+          {/* Warning banner — shown when type selected, no content yet, not generating, warnings exist */}
+          {selectedType && !generating && !content && currentWarnings.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
+              <div className="flex items-start gap-2 mb-3">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Missing information</p>
+                  <p className="mt-0.5 text-xs text-amber-700">The following fields are missing for this document:</p>
+                </div>
+              </div>
+              <ul className="mb-4 ml-6 space-y-1">
+                {currentWarnings.map((w) => (
+                  <li key={w} className="text-xs text-amber-700 list-disc">{w}</li>
+                ))}
+              </ul>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setWarningsAcknowledged(true); handleGenerate(selectedType); }}
+                  className="bg-amber-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-amber-700 transition-colors"
+                >
+                  Generate Anyway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedType(null); setPendingCard(null); }}
+                  className="text-xs text-amber-600 hover:text-amber-800"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
 

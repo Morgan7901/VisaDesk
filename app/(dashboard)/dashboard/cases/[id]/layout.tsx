@@ -35,8 +35,9 @@ export default async function CaseDetailLayout({
     .select(
       `id, ref_number, visa_subclass, visa_stream, status,
        current_stage_id, lodgement_date, trn, grant_date, visa_expiry, notes,
-       clients!client_id(full_name, email, phone, nationality, passport_number, passport_expiry),
-       sponsor:sponsors!sponsor_id(company_name, contact_name, contact_email),
+       client_id, sponsor_id,
+       clients!client_id(full_name, email, phone, nationality, passport_number, passport_expiry, portal_token, portal_active),
+       sponsor:sponsors!sponsor_id(company_name, contact_name, contact_email, portal_token, portal_active),
        agent:profiles!agent_id(full_name, email)`
     )
     .eq("id", params.id)
@@ -72,6 +73,8 @@ export default async function CaseDetailLayout({
     visa_expiry: raw.visa_expiry,
     notes: raw.notes,
     current_stage_label: currentStageLabel,
+    client_id: (raw as { client_id?: string | null }).client_id ?? null,
+    sponsor_id: (raw as { sponsor_id?: string | null }).sponsor_id ?? null,
     clients: arr(raw.clients as CaseDetailData["clients"] | CaseDetailData["clients"][] | null),
     sponsor: arr(raw.sponsor as CaseDetailData["sponsor"] | CaseDetailData["sponsor"][] | null),
     agent: arr(raw.agent as CaseDetailData["agent"] | CaseDetailData["agent"][] | null),
