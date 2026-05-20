@@ -47,12 +47,14 @@ export async function POST(request: Request) {
     visaSubclass,
     visaStream,
     notes,
+    sponsorId,
   }: {
     clientId?: string;
     newClient?: NewClientData;
     visaSubclass: string;
     visaStream?: string;
     notes?: string;
+    sponsorId?: string;
   } = body;
 
   if (!visaSubclass) {
@@ -124,6 +126,7 @@ export async function POST(request: Request) {
         firm_id: firmId,
         agent_id: agentId,
         client_id: resolvedClientId,
+        sponsor_id: sponsorId ?? null,
         ref_number: refNumber,
         visa_subclass: visaSubclass,
         visa_stream: visaStream ?? null,

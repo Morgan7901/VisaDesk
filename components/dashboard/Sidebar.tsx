@@ -8,6 +8,7 @@ import {
   GitBranch,
   CalendarClock,
   Users,
+  Building2,
   Landmark,
   Settings,
   LogOut,
@@ -21,8 +22,9 @@ const ALL_NAV = [
   { label: "Cases",     icon: Briefcase,       href: "/dashboard/cases",    resource: null },
   { label: "Pipeline",  icon: GitBranch,       href: "/dashboard/pipeline", resource: "pipeline" as const },
   { label: "Deadlines", icon: CalendarClock,   href: "/dashboard/deadlines",resource: null },
-  { label: "Clients",   icon: Users,           href: "/dashboard/clients",  resource: null },
-  { label: "Trust",     icon: Landmark,        href: "/dashboard/trust",    resource: "trust" as const },
+  { label: "Clients",   icon: Users,           href: "/dashboard/clients",   resource: null },
+  { label: "Sponsors",  icon: Building2,       href: "/dashboard/sponsors",  resource: null },
+  { label: "Trust",     icon: Landmark,        href: "/dashboard/trust",     resource: "trust" as const },
   { label: "Settings",  icon: Settings,        href: "/dashboard/settings", resource: "settings" as const },
 ];
 
