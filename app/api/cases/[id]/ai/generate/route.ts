@@ -412,7 +412,7 @@ export async function POST(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-opus-4-20250514",
+      model: "claude-opus-4-5-20251101",
       max_tokens: 2000,
       stream: true,
       system: SYSTEM_PROMPT,
@@ -421,8 +421,13 @@ export async function POST(
   });
 
   if (!anthropicRes.ok) {
-    const err = await anthropicRes.text();
-    console.error("[ai/generate] Anthropic error:", err);
+    const errText = await anthropicRes.text();
+    console.error(
+      "[ai/generate] Anthropic API error —",
+      "status:", anthropicRes.status,
+      "statusText:", anthropicRes.statusText,
+      "body:", errText
+    );
     return NextResponse.json(
       { error: "AI generation failed. Check API key and model availability." },
       { status: 502 }
