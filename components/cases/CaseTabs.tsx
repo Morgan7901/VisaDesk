@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TabDef {
   label: string;
   suffix: string;
   badge?: number;
+  icon?: React.ReactNode;
 }
 
 export function CaseTabs({
@@ -25,12 +27,13 @@ export function CaseTabs({
     { label: "Documents",      suffix: "/documents" },
     { label: "Communications", suffix: "/comms", badge: commCount },
     { label: "Trust",          suffix: "/trust" },
+    { label: "AI Tools",       suffix: "/ai", icon: <Sparkles className="h-3.5 w-3.5" /> },
   ];
 
   return (
     <div className="border-b border-slate-200 bg-white px-6">
       <nav className="-mb-px flex gap-0">
-        {TABS.map(({ label, suffix, badge }) => {
+        {TABS.map(({ label, suffix, badge, icon }) => {
           const href = `${base}${suffix}`;
           const isActive =
             suffix === ""
@@ -48,6 +51,7 @@ export function CaseTabs({
                   : "border-transparent text-slate-400 hover:text-slate-600 hover:border-slate-300"
               )}
             >
+              {icon && icon}
               {label}
               {typeof badge === "number" && badge > 0 && (
                 <span

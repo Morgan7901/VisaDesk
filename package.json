@@ -14,6 +14,8 @@
     "@supabase/supabase-js": "^2.105.4",
     "clsx": "^2.1.1",
     "date-fns": "^4.2.1",
+    "docx": "^9.6.1",
+    "file-saver": "^2.0.5",
     "lucide-react": "^1.16.0",
     "next": "14.2.35",
     "react": "^18",
@@ -25,6 +27,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@types/file-saver": "^2.0.7",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
