@@ -836,7 +836,7 @@ export function DocumentChecklist({ documents: initialDocuments, caseId, visaSub
           <div className="text-center">
             <FileText className="mx-auto h-8 w-8 text-slate-200" />
             <p className="mt-2 text-sm text-slate-400">No documents yet.</p>
-            <p className="text-xs text-slate-400">Click "Load Standard Docs" to add the standard checklist.</p>
+            <p className="text-xs text-slate-400">Click &quot;Load Standard Docs&quot; to add the standard checklist.</p>
           </div>
         </div>
       ) : filtered.length === 0 ? (
