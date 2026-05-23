@@ -311,13 +311,11 @@ function FileRow({
 
 function DocRow({
   doc,
-  caseId,
   onReview,
   onDocUpdated,
   onDeleted,
 }: {
   doc: CaseDocument;
-  caseId: string;
   onReview: (file: DocumentFile, doc: CaseDocument) => void;
   onDocUpdated: (docId: string, patch: Partial<CaseDocument>) => void;
   onDeleted: (docId: string) => void;
@@ -906,7 +904,7 @@ export function DocumentChecklist({ documents: initialDocuments, caseId, visaSub
                 <DocRow
                   key={doc.id}
                   doc={doc}
-                  caseId={caseId}
+
                   onReview={openReview}
                   onDocUpdated={handleDocUpdated}
                   onDeleted={handleDocDeleted}
@@ -926,7 +924,7 @@ export function DocumentChecklist({ documents: initialDocuments, caseId, visaSub
                 <DocRow
                   key={doc.id}
                   doc={doc}
-                  caseId={caseId}
+
                   onReview={openReview}
                   onDocUpdated={handleDocUpdated}
                   onDeleted={handleDocDeleted}
@@ -1079,7 +1077,8 @@ export function DocumentChecklist({ documents: initialDocuments, caseId, visaSub
                               onChange={() => {
                                 setCheckedIds((prev) => {
                                   const next = new Set(prev);
-                                  next.has(dt.id) ? next.delete(dt.id) : next.add(dt.id);
+                                  if (next.has(dt.id)) next.delete(dt.id);
+                                  else next.add(dt.id);
                                   return next;
                                 });
                               }}
