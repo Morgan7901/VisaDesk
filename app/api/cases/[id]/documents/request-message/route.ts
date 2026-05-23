@@ -3,16 +3,18 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { NextRequest, NextResponse } from "next/server";
 
 // POST /api/cases/[id]/documents/request-message
-// Generates an AI document request message for missing/rejected documents.
-// Returns messages for both client and sponsor (if applicable).
+// Generates AI document request messages for missing/rejected documents.
+// Returns messages for client and/or sponsor.
 
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: caseId } = await params;
-  const sessionClient = await createClient();
 
+  console.log("[request-message] caseId:", caseId);
+
+  const sessionClient = await createClient();
   const { data: { user } } = await sessionClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -26,74 +28,84 @@ export async function POST(
     return NextResponse.json({ error: "No firm associated." }, { status: 400 });
   }
 
-  // Fetch case, client, firm
-  const { data: caseRow } = await supabaseAdmin
+  // Fetch case — simple query, no nested joins
+  const { data: caseRow, error: caseErr } = await supabaseAdmin
     .from("cases")
-    .select(`
-      id, ref_number, visa_subclass,
-      clients!client_id(full_name),
-      sponsors!sponsor_id(company_name, contact_name),
-      current_stage:workflow_stages!current_stage_id(label)
-    `)
+    .select("id, ref_number, visa_subclass, client_id, sponsor_id, current_stage_id")
     .eq("id", caseId)
     .eq("firm_id", profile.firm_id)
     .single();
+
+  console.log("[request-message] caseRow:", caseRow, "error:", caseErr?.message);
 
   if (!caseRow) {
     return NextResponse.json({ error: "Case not found." }, { status: 404 });
   }
 
-  const { data: firm } = await supabaseAdmin
-    .from("firms")
-    .select("name")
-    .eq("id", profile.firm_id)
-    .single();
+  // Fetch related entities in parallel
+  const [firmRes, clientRes, sponsorRes, stageRes] = await Promise.all([
+    supabaseAdmin.from("firms").select("name").eq("id", profile.firm_id).single(),
+    caseRow.client_id
+      ? supabaseAdmin.from("clients").select("full_name").eq("id", caseRow.client_id).single()
+      : Promise.resolve({ data: null }),
+    caseRow.sponsor_id
+      ? supabaseAdmin.from("sponsors").select("company_name, contact_name").eq("id", caseRow.sponsor_id).single()
+      : Promise.resolve({ data: null }),
+    caseRow.current_stage_id
+      ? supabaseAdmin.from("workflow_stages").select("label").eq("id", caseRow.current_stage_id).single()
+      : Promise.resolve({ data: null }),
+  ]);
 
-  // Fetch missing/rejected documents
-  const { data: docs } = await supabaseAdmin
+  const firm = firmRes.data;
+  const clientName = clientRes.data?.full_name ?? "Client";
+  const sponsor = sponsorRes.data;
+  const stageLabel = stageRes.data?.label ?? "";
+
+  // Fetch missing/rejected documents — handle both overall_status and legacy status
+  const { data: allDocs } = await supabaseAdmin
     .from("case_documents")
-    .select("id, label, overall_status, portal_upload, review_notes")
-    .eq("case_id", caseId)
-    .in("overall_status", ["missing", "rejected"]);
+    .select("id, label, overall_status, status, portal_upload, review_notes")
+    .eq("case_id", caseId);
 
-  if (!docs || docs.length === 0) {
+  const docs = (allDocs ?? []).filter((d) => {
+    const s = d.overall_status ?? (d.status === "pending" ? "missing" : d.status);
+    return s === "missing" || s === "rejected";
+  });
+
+  console.log("[request-message] total docs:", allDocs?.length, "missing/rejected:", docs.length);
+
+  if (docs.length === 0) {
     return NextResponse.json({ error: "No missing or rejected documents found." }, { status: 400 });
   }
 
-  // Split into client-facing and sponsor-facing
-  const clientDocs = docs.filter((d) => d.portal_upload === "client");
+  // Split by who needs to upload — include agent docs in client bucket for the message
+  const clientDocs = docs.filter((d) => d.portal_upload === "client" || d.portal_upload === null);
   const sponsorDocs = docs.filter((d) => d.portal_upload === "sponsor");
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const clientName = (() => { const c = caseRow.clients as any; return (Array.isArray(c) ? c[0] : c)?.full_name ?? "Client"; })();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sponsor = (() => { const s = caseRow.sponsors as any; return Array.isArray(s) ? s[0] : s; })();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const stageLabel = (() => { const st = caseRow.current_stage as any; return (Array.isArray(st) ? st[0] : st)?.label ?? ""; })();
 
   const generateMessage = async (
     recipientType: "client" | "sponsor",
     recipientName: string,
-    docs: Array<{ label: string; overall_status: string; review_notes: string | null }>
+    docList: Array<{ label: string; overall_status: string | null; status: string; review_notes: string | null }>
   ): Promise<string> => {
-    const docList = docs
+    const items = docList
       .map((d) => {
-        if (d.overall_status === "rejected" && d.review_notes) {
+        const s = d.overall_status ?? d.status;
+        if (s === "rejected" && d.review_notes) {
           return `- ${d.label} (previously rejected — reason: ${d.review_notes})`;
         }
         return `- ${d.label}`;
       })
       .join("\n");
 
-    const userPrompt = `Generate a document request message for a ${caseRow.visa_subclass ? `SC-${caseRow.visa_subclass}` : ""} visa application.
+    const prompt = `Generate a document request message for a ${caseRow.visa_subclass ? `SC-${caseRow.visa_subclass}` : ""} visa application.
 
 ${recipientType === "client" ? "Client" : "Sponsor contact"} name: ${recipientName}
 Case reference: ${caseRow.ref_number ?? ""}
 Agent name: ${profile.full_name}
 Firm: ${firm?.name ?? ""}
 
-Missing / required documents needed from ${recipientType === "client" ? "the applicant" : "the sponsor"}:
-${docList}
+Documents needed from ${recipientType === "client" ? "the applicant" : "the sponsor"}:
+${items}
 
 Additional context:
 - Visa subclass: SC-${caseRow.visa_subclass ?? ""}
@@ -102,11 +114,11 @@ ${stageLabel ? `- Current stage: ${stageLabel}` : ""}
 Write a concise, professional message (under 200 words) that:
 1. States the purpose clearly
 2. Lists exactly what is needed as dot points
-3. Explains how to upload via the secure client portal
-4. Gives a polite deadline reminder
+3. Explains how to upload via the secure portal
+4. Gives a polite deadline reminder (end of week if no other context)
 5. Signs off professionally from ${profile.full_name} at ${firm?.name ?? "the firm"}
 
-Do not be overly formal. Use the ${recipientType === "client" ? "client's" : "contact's"} first name.`;
+Use the ${recipientType === "client" ? "client's" : "contact's"} first name. Write only the message body — no subject line, no markdown.`;
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -118,20 +130,21 @@ Do not be overly formal. Use the ${recipientType === "client" ? "client's" : "co
       body: JSON.stringify({
         model: "claude-opus-4-5",
         max_tokens: 600,
-        system: "You are an expert Australian migration agent writing professional but friendly document request messages to visa applicants and employer sponsors. Write only the message body — no subject line, no markdown, no explanation.",
-        messages: [{ role: "user", content: userPrompt }],
+        system: "You are an expert Australian migration agent writing professional but friendly document request messages to visa applicants and employer sponsors.",
+        messages: [{ role: "user", content: prompt }],
       }),
     });
 
     if (!res.ok) {
-      console.error("[request-message] Anthropic API error:", res.status);
+      console.error("[request-message] Anthropic API error:", res.status, await res.text());
       return "";
     }
 
     const data = await res.json();
-    const content = data.content?.[0];
-    return content?.type === "text" ? content.text : "";
+    return data.content?.[0]?.text ?? "";
   };
+
+  const firstName = (name: string) => name.split(" ")[0];
 
   const results: {
     clientMessage: string | null;
@@ -145,15 +158,13 @@ Do not be overly formal. Use the ${recipientType === "client" ? "client's" : "co
     sponsorDocs: sponsorDocs.map((d) => d.label),
   };
 
-  const firstName = (name: string) => name.split(" ")[0];
-
   if (clientDocs.length > 0) {
     results.clientMessage = await generateMessage("client", firstName(clientName), clientDocs);
   }
 
   if (sponsorDocs.length > 0 && sponsor) {
-    const sponsorContactName = sponsor.contact_name ?? sponsor.company_name ?? "Team";
-    results.sponsorMessage = await generateMessage("sponsor", firstName(sponsorContactName), sponsorDocs);
+    const name = sponsor.contact_name ?? sponsor.company_name ?? "Team";
+    results.sponsorMessage = await generateMessage("sponsor", firstName(name), sponsorDocs);
   }
 
   return NextResponse.json(results);

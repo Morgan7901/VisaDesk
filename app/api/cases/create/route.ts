@@ -264,22 +264,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // 8. Seed document checklist from document_types for this visa subclass
-    const { data: docTypes } = await supabaseAdmin
-      .from("document_types")
-      .select("id, label")
-      .eq("visa_subclass", visaSubclass);
-
-    if (docTypes && docTypes.length > 0) {
-      await supabaseAdmin.from("case_documents").insert(
-        docTypes.map((dt) => ({
-          case_id: caseId,
-          document_type_id: dt.id,
-          label: dt.label,
-          status: "pending",
-        }))
-      );
-    }
+    // Documents are NOT auto-seeded on case creation.
+    // The agent uses "Load Standard Docs" on the Documents tab to choose which ones to add.
 
     return NextResponse.json({ caseId });
   } catch (err) {
