@@ -34,10 +34,14 @@ export interface PortalDocument {
   id: string;
   label: string;
   is_required: boolean;
-  status: string; // pending | uploaded | approved | rejected
+  status: string; // missing | uploaded | approved | rejected
   file_name: string | null;
   uploaded_at: string | null;
   review_notes: string | null;
+  multiple_files_allowed: boolean;
+  file_count: number;
+  // Expiry of most recently uploaded file (if any)
+  nearest_expiry: string | null;
 }
 
 export interface PortalMessage {
@@ -312,30 +316,55 @@ async function getPortalDocuments(
   caseId: string,
   portalType: PortalType
 ): Promise<PortalDocument[]> {
-  // Filter on portal_upload stored directly on the case_document row (denormalised from
-  // document_types at insert time). Also join document_types for is_required — use the
-  // plain table name without an FK hint so PostgREST resolves it unambiguously.
+  // Fetch case_documents for this portal type, join document_types for is_required
   const { data: docs } = await supabaseAdmin
     .from("case_documents")
     .select(
-      "id, label, status, file_name, uploaded_at, review_notes, document_types(is_required)"
+      "id, label, status, overall_status, file_name, uploaded_at, review_notes, multiple_files_allowed, document_types(is_required)"
     )
     .eq("case_id", caseId)
-    .eq("portal_upload", portalType);
+    .eq("portal_upload", portalType)
+    .order("sort_order", { ascending: true });
 
-  if (!docs) return [];
+  if (!docs || docs.length === 0) return [];
+
+  // Fetch document_files for all these case_documents in one query
+  const docIds = docs.map((d) => d.id);
+  const { data: allFiles } = await supabaseAdmin
+    .from("document_files")
+    .select("case_document_id, review_status, expiry_date, uploaded_at")
+    .in("case_document_id", docIds)
+    .order("uploaded_at", { ascending: false });
+
+  const filesByDocId = new Map<string, typeof allFiles>();
+  for (const f of allFiles ?? []) {
+    if (!filesByDocId.has(f.case_document_id)) filesByDocId.set(f.case_document_id, []);
+    filesByDocId.get(f.case_document_id)!.push(f);
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return docs.map((d: any) => {
     const dt = Array.isArray(d.document_types) ? d.document_types[0] : d.document_types;
+    const files = filesByDocId.get(d.id) ?? [];
+    const nearestExpiry = files
+      .map((f) => f.expiry_date)
+      .filter(Boolean)
+      .sort()[0] ?? null;
+
+    // overall_status takes precedence over legacy status
+    const status = d.overall_status ?? (d.status === "pending" ? "missing" : d.status);
+
     return {
       id: d.id,
       label: d.label,
       is_required: dt?.is_required ?? true,
-      status: d.status ?? "pending",
-      file_name: d.file_name ?? null,
-      uploaded_at: d.uploaded_at ?? null,
+      status,
+      file_name: files[0] ? null : (d.file_name ?? null), // prefer file_name from document_files
+      uploaded_at: files[0]?.uploaded_at ?? d.uploaded_at ?? null,
       review_notes: d.review_notes ?? null,
+      multiple_files_allowed: d.multiple_files_allowed ?? true,
+      file_count: files.length,
+      nearest_expiry: nearestExpiry,
     };
   });
 }

@@ -41,10 +41,15 @@ export async function POST(
     return NextResponse.json({ error: "No documents selected." }, { status: 400 });
   }
 
-  // 4. Fetch the selected document_types to get their labels
+  // 4. Fetch the selected document_types with all new fields
   const { data: docTypes } = await supabaseAdmin
     .from("document_types")
-    .select("id, label, is_required, portal_upload, description")
+    .select(`
+      id, label, is_required, portal_upload, description,
+      tracks_expiry, multiple_files_allowed, ai_requestable,
+      conditional, internal_only, sponsor_visible,
+      category, sort_order
+    `)
     .in("id", selectedIds);
 
   if (!docTypes?.length) {
@@ -59,7 +64,7 @@ export async function POST(
 
   const existingLabels = new Set((existing ?? []).map((d) => d.label.toLowerCase()));
 
-  // 6. Filter out duplicates
+  // 6. Filter out duplicates and build insert rows with all new fields
   const toInsert = docTypes
     .filter((dt) => !existingLabels.has(dt.label.toLowerCase()))
     .map((dt) => ({
@@ -67,7 +72,13 @@ export async function POST(
       document_type_id: dt.id,
       label: dt.label,
       status: "pending",
-      portal_upload: dt.portal_upload ?? null, // denormalised so portal can filter directly
+      overall_status: "missing",
+      portal_upload: dt.portal_upload ?? null,
+      tracks_expiry: dt.tracks_expiry ?? false,
+      multiple_files_allowed: dt.multiple_files_allowed ?? true,
+      ai_requestable: dt.ai_requestable ?? true,
+      category: dt.category ?? null,
+      sort_order: dt.sort_order ?? 0,
     }));
 
   if (toInsert.length === 0) {
@@ -78,9 +89,11 @@ export async function POST(
   const { data: created, error } = await supabaseAdmin
     .from("case_documents")
     .insert(toInsert)
-    .select(
-      "id, label, status, file_name, file_size, uploaded_at, review_notes, storage_path, document_types!document_type_id(description, is_required, portal_upload)"
-    );
+    .select(`
+      id, label, status, overall_status, category, sort_order,
+      portal_upload, tracks_expiry, multiple_files_allowed,
+      document_types!document_type_id(description, is_required, portal_upload, category, conditional)
+    `);
 
   if (error) {
     console.error("[load-template]", error);

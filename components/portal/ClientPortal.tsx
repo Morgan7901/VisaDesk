@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
   PartyPopper,
+  CalendarClock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ClientPortalData, PortalDocument, PortalMessage, PortalStage } from "@/lib/supabase/portal";
@@ -97,6 +98,10 @@ function StageProgress({ stages }: { stages: PortalStage[] }) {
 
 // ── Document row ─────────────────────────────────────────────────────────────
 
+function daysUntil(iso: string): number {
+  return Math.ceil((new Date(iso).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
 function DocRow({
   doc,
   token,
@@ -106,17 +111,12 @@ function DocRow({
   token: string;
   onUpdated: (updated: PortalDocument) => void;
 }) {
-  // Local copy so the UI updates immediately on upload without waiting
-  // for the parent state re-render cycle to complete.
   const [localDoc, setLocalDoc] = useState<PortalDocument>(doc);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Sync from parent when the prop changes externally (e.g. agent approves/rejects
-  // the document via realtime update — the parent updates documents state which
-  // flows down as a new doc prop).
   useEffect(() => {
     setLocalDoc(doc);
   }, [doc]);
@@ -142,10 +142,9 @@ function DocRow({
         status: json.document.status ?? "uploaded",
         file_name: json.document.file_name ?? file.name,
         uploaded_at: json.document.uploaded_at ?? new Date().toISOString(),
+        file_count: (localDoc.file_count ?? 0) + 1,
       };
-      // Update local state immediately — no flicker, no dependency on parent re-render
       setLocalDoc(updated);
-      // Also propagate to parent so the documents array stays in sync
       onUpdated(updated);
     } else {
       setError(json.error ?? "Upload failed. Please try again.");
@@ -165,7 +164,7 @@ function DocRow({
         );
       case "uploaded":
         return (
-          <span className="flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
+          <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
             <CheckCircle2 className="h-3 w-3" />
             Uploaded — awaiting review
           </span>
@@ -174,25 +173,45 @@ function DocRow({
         return (
           <span className="flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
             <XCircle className="h-3 w-3" />
-            Rejected
+            Rejected — please re-upload
           </span>
         );
       default:
         return (
           <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
             <Circle className="h-3 w-3" />
-            Required
+            {localDoc.is_required ? "Required" : "Optional"}
           </span>
         );
     }
   };
 
-  const canUpload = localDoc.status === "pending" || localDoc.status === "rejected";
+  // Can upload: always if missing/rejected, and also for multi-file docs that are uploaded/approved
+  const canUpload =
+    localDoc.status === "missing" ||
+    localDoc.status === "pending" ||
+    localDoc.status === "rejected" ||
+    (localDoc.multiple_files_allowed && (localDoc.status === "uploaded" || localDoc.status === "approved"));
+
+  const uploadLabel = localDoc.status === "rejected"
+    ? "Re-upload"
+    : localDoc.file_count > 0 && localDoc.multiple_files_allowed
+    ? "Upload Another"
+    : "Upload";
+
+  // Expiry warning
+  const expiryWarning = localDoc.nearest_expiry ? (() => {
+    const days = daysUntil(localDoc.nearest_expiry!);
+    if (days < 0) return { text: `Expired ${fmt(localDoc.nearest_expiry!)}`, cls: "bg-red-100 text-red-700" };
+    if (days <= 30) return { text: `Expires in ${days} days — renew urgently`, cls: "bg-red-50 text-red-600" };
+    if (days <= 90) return { text: `Expires in ${days} days`, cls: "bg-amber-50 text-amber-700" };
+    return null;
+  })() : null;
 
   return (
     <div className="border-b border-slate-100 last:border-0">
-      <div className="flex items-center gap-3 px-4 py-3.5">
-        <FileText className="h-4 w-4 shrink-0 text-slate-300" />
+      <div className="flex items-start gap-3 px-4 py-3.5">
+        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-slate-800">{localDoc.label}</span>
@@ -201,17 +220,32 @@ function DocRow({
                 Optional
               </span>
             )}
+            {localDoc.file_count > 0 && (
+              <span className="text-xs text-slate-400">{localDoc.file_count} file{localDoc.file_count !== 1 ? "s" : ""} uploaded</span>
+            )}
           </div>
-          {localDoc.file_name && (
+          {localDoc.uploaded_at && localDoc.file_count > 0 && (
             <p className="mt-0.5 text-xs text-slate-400">
-              {localDoc.file_name}
-              {localDoc.uploaded_at && <> · Uploaded {fmt(localDoc.uploaded_at)}</>}
+              Last upload: {fmt(localDoc.uploaded_at)}
             </p>
+          )}
+          {expiryWarning && (
+            <span className={cn("mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", expiryWarning.cls)}>
+              <CalendarClock className="h-3 w-3" />
+              {expiryWarning.text}
+            </span>
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          {statusBadge()}
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            {statusBadge()}
+            {(localDoc.status === "rejected" && localDoc.review_notes) && (
+              <button onClick={() => setExpanded((e) => !e)} className="text-slate-400 hover:text-slate-600">
+                {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </button>
+            )}
+          </div>
           {canUpload && (
             <>
               <button
@@ -220,7 +254,7 @@ function DocRow({
                 className="flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"
               >
                 <Upload className="h-3 w-3" />
-                {uploading ? "Uploading…" : localDoc.status === "rejected" ? "Re-upload" : "Upload"}
+                {uploading ? "Uploading…" : uploadLabel}
               </button>
               <input
                 ref={fileRef}
@@ -229,11 +263,6 @@ function DocRow({
                 onChange={handleFileChange}
               />
             </>
-          )}
-          {localDoc.status === "rejected" && localDoc.review_notes && (
-            <button onClick={() => setExpanded((e) => !e)} className="text-slate-400 hover:text-slate-600">
-              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
           )}
         </div>
       </div>

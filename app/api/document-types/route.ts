@@ -4,7 +4,15 @@ import { NextResponse } from "next/server";
 
 // GET /api/document-types?visaSubclass=482
 // Returns document_types for the given visa subclass (plus any with null subclass).
+// Now includes all new fields: category, tracks_expiry, multiple_files_allowed, conditional, etc.
 // Requires authentication — this is an agent-facing endpoint.
+
+const SELECT_FIELDS = `
+  id, label, is_required, portal_upload, description,
+  category, sort_order, tracks_expiry, multiple_files_allowed,
+  conditional, internal_only, sponsor_visible, ai_requestable
+`;
+
 export async function GET(request: Request) {
   const sessionClient = await createClient();
   const { data: { user } } = await sessionClient.auth.getUser();
@@ -18,19 +26,19 @@ export async function GET(request: Request) {
   let documentTypes: unknown[] = [];
 
   if (visaSubclass) {
-    // Run two separate queries and merge — avoids any edge-cases with .or() + is.null
+    // Run two separate queries and merge — avoids edge-cases with .or() + is.null
     const [{ data: exact, error: exactErr }, { data: universal, error: universalErr }] =
       await Promise.all([
         supabaseAdmin
           .from("document_types")
-          .select("id, label, is_required, portal_upload, description")
+          .select(SELECT_FIELDS)
           .eq("visa_subclass", visaSubclass)
-          .order("label"),
+          .order("sort_order", { ascending: true }),
         supabaseAdmin
           .from("document_types")
-          .select("id, label, is_required, portal_upload, description")
+          .select(SELECT_FIELDS)
           .is("visa_subclass", null)
-          .order("label"),
+          .order("sort_order", { ascending: true }),
       ]);
 
     if (exactErr) {
@@ -42,10 +50,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: universalErr.message }, { status: 500 });
     }
 
+    // Sort by sort_order, then label within groups
     documentTypes = [
       ...(exact ?? []),
       ...(universal ?? []),
-    ].sort((a: {label:string}, b: {label:string}) => a.label.localeCompare(b.label));
+    ].sort((a: { sort_order: number; label: string }, b: { sort_order: number; label: string }) => {
+      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+      return a.label.localeCompare(b.label);
+    });
 
     console.log("[document-types] results:", {
       visaSubclass,
@@ -54,11 +66,12 @@ export async function GET(request: Request) {
       total: documentTypes.length,
     });
   } else {
-    // No subclass filter — return all
+    // No subclass filter — return all, ordered by subclass then sort_order
     const { data, error } = await supabaseAdmin
       .from("document_types")
-      .select("id, label, is_required, portal_upload, description")
-      .order("label");
+      .select(SELECT_FIELDS)
+      .order("visa_subclass", { ascending: true, nullsFirst: false })
+      .order("sort_order", { ascending: true });
 
     if (error) {
       console.error("[document-types] all query error:", error.message);

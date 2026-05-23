@@ -2,11 +2,11 @@ import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { NextRequest, NextResponse } from "next/server";
 
-// [id] is now a document_files.id (not case_documents.id)
+// PATCH /api/documents/files/[fileId]/review
+// Reviews a specific document_files row, then recalculates parent case_documents overall_status.
 
-const VALID_REVIEW_STATUSES = new Set(["approved", "rejected"]);
+const VALID_STATUSES = new Set(["approved", "rejected"]);
 
-// Helper: recalculate overall_status on a case_documents row based on its document_files
 async function recalcOverallStatus(caseDocumentId: string): Promise<string> {
   const { data: files } = await supabaseAdmin
     .from("document_files")
@@ -17,10 +17,8 @@ async function recalcOverallStatus(caseDocumentId: string): Promise<string> {
   if (files && files.length > 0) {
     if (files.some((f) => f.review_status === "approved")) {
       newStatus = "approved";
-    } else if (files.some((f) => f.review_status === "rejected")) {
-      // Only "rejected" if ALL files are rejected (at least one still pending = uploaded)
-      const allRejected = files.every((f) => f.review_status === "rejected");
-      newStatus = allRejected ? "rejected" : "uploaded";
+    } else if (files.every((f) => f.review_status === "rejected")) {
+      newStatus = "rejected";
     } else {
       newStatus = "uploaded";
     }
@@ -39,9 +37,9 @@ async function recalcOverallStatus(caseDocumentId: string): Promise<string> {
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ fileId: string }> }
 ) {
-  const { id: fileId } = await params;
+  const { fileId } = await params;
   const sessionClient = await createClient();
 
   const {
@@ -51,18 +49,17 @@ export async function PATCH(
 
   const { review_status, review_notes } = await request.json();
 
-  if (!review_status || !VALID_REVIEW_STATUSES.has(review_status)) {
+  if (!review_status || !VALID_STATUSES.has(review_status)) {
     return NextResponse.json({ error: "Invalid status." }, { status: 400 });
   }
 
   if (review_status === "rejected" && !review_notes?.trim()) {
     return NextResponse.json(
-      { error: "Review notes are required when rejecting a document." },
+      { error: "Review notes are required when rejecting." },
       { status: 400 }
     );
   }
 
-  // Fetch the file to get case_document_id
   const { data: fileRow } = await supabaseAdmin
     .from("document_files")
     .select("id, case_document_id")
@@ -73,7 +70,6 @@ export async function PATCH(
     return NextResponse.json({ error: "File not found." }, { status: 404 });
   }
 
-  // Update the document_files row
   const { data: updated, error } = await supabaseAdmin
     .from("document_files")
     .update({
@@ -86,12 +82,12 @@ export async function PATCH(
     .select("id, review_status, review_notes, reviewed_at");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!updated?.length) {
-    return NextResponse.json({ error: "File not found." }, { status: 404 });
-  }
 
-  // Recalculate overall_status on parent case_documents row
   const overallStatus = await recalcOverallStatus(fileRow.case_document_id);
 
-  return NextResponse.json({ file: updated[0], overallStatus, caseDocumentId: fileRow.case_document_id });
+  return NextResponse.json({
+    file: updated?.[0],
+    overallStatus,
+    caseDocumentId: fileRow.case_document_id,
+  });
 }

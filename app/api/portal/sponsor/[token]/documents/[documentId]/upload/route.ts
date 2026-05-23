@@ -1,6 +1,34 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
+async function recalcOverallStatus(caseDocumentId: string): Promise<string> {
+  const { data: files } = await supabaseAdmin
+    .from("document_files")
+    .select("review_status")
+    .eq("case_document_id", caseDocumentId);
+
+  let newStatus = "missing";
+  if (files && files.length > 0) {
+    if (files.some((f) => f.review_status === "approved")) {
+      newStatus = "approved";
+    } else if (files.every((f) => f.review_status === "rejected")) {
+      newStatus = "rejected";
+    } else {
+      newStatus = "uploaded";
+    }
+  }
+
+  await supabaseAdmin
+    .from("case_documents")
+    .update({
+      overall_status: newStatus,
+      status: newStatus === "missing" ? "pending" : newStatus === "uploaded" ? "uploaded" : newStatus,
+    })
+    .eq("id", caseDocumentId);
+
+  return newStatus;
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ token: string; documentId: string }> }
@@ -22,7 +50,7 @@ export async function POST(
   // 2. Verify the document belongs to one of this sponsor's cases
   const { data: doc } = await supabaseAdmin
     .from("case_documents")
-    .select("id, case_id, cases!case_id(firm_id, sponsor_id)")
+    .select("id, case_id, multiple_files_allowed, cases!case_id(firm_id, sponsor_id)")
     .eq("id", documentId)
     .single();
 
@@ -46,14 +74,15 @@ export async function POST(
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const storagePath = `case-documents/${sponsor.firm_id}/${doc.case_id}/${documentId}/${safeName}`;
+  const timestamp = Date.now();
+  const storagePath = `${sponsor.firm_id}/${doc.case_id}/${documentId}/${timestamp}_${safeName}`;
 
   // 4. Upload to Supabase Storage
   const { error: uploadError } = await supabaseAdmin.storage
     .from("case-documents")
     .upload(storagePath, buffer, {
       contentType: file.type || "application/octet-stream",
-      upsert: true,
+      upsert: false,
     });
 
   if (uploadError) {
@@ -61,24 +90,39 @@ export async function POST(
     return NextResponse.json({ error: uploadError.message }, { status: 500 });
   }
 
-  // 5. Update case_documents record
-  const { data: updated, error: dbError } = await supabaseAdmin
-    .from("case_documents")
-    .update({
-      storage_path: storagePath,
+  // 5. INSERT into document_files
+  const { data: newFile, error: fileErr } = await supabaseAdmin
+    .from("document_files")
+    .insert({
+      case_document_id: documentId,
+      case_id: doc.case_id,
+      firm_id: sponsor.firm_id,
+      uploaded_by_portal: "sponsor",
       file_name: file.name,
+      storage_path: storagePath,
       file_size: file.size,
+      mime_type: file.type || null,
+      review_status: "pending",
       uploaded_at: new Date().toISOString(),
-      status: "uploaded",
     })
-    .eq("id", documentId)
-    .select("id, status, file_name, uploaded_at")
+    .select("id, file_name, file_size, review_status, uploaded_at")
     .single();
 
-  if (dbError) {
-    console.error("[portal/sponsor/upload] db error:", dbError);
-    return NextResponse.json({ error: dbError.message }, { status: 500 });
+  if (fileErr || !newFile) {
+    console.error("[portal/sponsor/upload] db error:", fileErr);
+    return NextResponse.json({ error: fileErr?.message ?? "Failed to save file record." }, { status: 500 });
   }
 
-  return NextResponse.json({ document: updated });
+  // 6. Recalculate overall_status
+  const overallStatus = await recalcOverallStatus(documentId);
+
+  return NextResponse.json({
+    document: {
+      id: documentId,
+      status: overallStatus,
+      file_name: file.name,
+      uploaded_at: newFile.uploaded_at,
+    },
+    file: newFile,
+  });
 }
