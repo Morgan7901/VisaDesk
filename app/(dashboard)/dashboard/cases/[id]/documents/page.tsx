@@ -28,14 +28,14 @@ export default async function DocumentsPage({
     .eq("id", id)
     .single();
 
-  // Fetch documents with all new fields via admin client
+  // Fetch documents with all fields via admin client
   const { data: rawDocs } = await supabaseAdmin
     .from("case_documents")
     .select(`
       id, label, status, overall_status,
       file_name, file_size, uploaded_at, review_notes, storage_path,
       category, sort_order, tracks_expiry, multiple_files_allowed,
-      portal_upload,
+      portal_upload, template_document_id, requested_at, request_message,
       document_types!document_type_id(description, is_required, portal_upload, category, conditional)
     `)
     .eq("case_id", id)
@@ -72,6 +72,9 @@ export default async function DocumentsPage({
       sort_order: doc.sort_order ?? 0,
       tracks_expiry: doc.tracks_expiry ?? false,
       multiple_files_allowed: doc.multiple_files_allowed ?? true,
+      template_document_id: doc.template_document_id ?? null,
+      requested_at: doc.requested_at ?? null,
+      request_message: doc.request_message ?? null,
     };
   });
 

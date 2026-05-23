@@ -176,6 +176,13 @@ function DocRow({
             Rejected — please re-upload
           </span>
         );
+      case "requested":
+        return (
+          <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+            <Circle className="h-3 w-3" />
+            Requested
+          </span>
+        );
       default:
         return (
           <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">

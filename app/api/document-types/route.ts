@@ -2,9 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 
-// GET /api/document-types?visaSubclass=482
+// GET /api/document-types?visaSubclass=482&caseId=xxx
 // Returns document_types for the given visa subclass (plus any with null subclass).
-// Now includes all new fields: category, tracks_expiry, multiple_files_allowed, conditional, etc.
+// When caseId is provided, also marks already_added=true for docs already in that case.
 // Requires authentication — this is an agent-facing endpoint.
 
 const SELECT_FIELDS = `
@@ -20,13 +20,13 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const visaSubclass = searchParams.get("visaSubclass");
+  const caseId = searchParams.get("caseId");
 
-  console.log("[document-types] GET params:", { visaSubclass });
+  console.log("[document-types] GET params:", { visaSubclass, caseId });
 
-  let documentTypes: unknown[] = [];
+  let documentTypes: Array<Record<string, unknown>> = [];
 
   if (visaSubclass) {
-    // Run two separate queries and merge — avoids edge-cases with .or() + is.null
     const [{ data: exact, error: exactErr }, { data: universal, error: universalErr }] =
       await Promise.all([
         supabaseAdmin
@@ -50,13 +50,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: universalErr.message }, { status: 500 });
     }
 
-    // Sort by sort_order, then label within groups
     documentTypes = [
       ...(exact ?? []),
       ...(universal ?? []),
-    ].sort((a: { sort_order: number; label: string }, b: { sort_order: number; label: string }) => {
-      if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
-      return a.label.localeCompare(b.label);
+    ].sort((a, b) => {
+      const ao = a.sort_order as number;
+      const bo = b.sort_order as number;
+      if (ao !== bo) return ao - bo;
+      return (a.label as string).localeCompare(b.label as string);
     });
 
     console.log("[document-types] results:", {
@@ -66,7 +67,6 @@ export async function GET(request: Request) {
       total: documentTypes.length,
     });
   } else {
-    // No subclass filter — return all, ordered by subclass then sort_order
     const { data, error } = await supabaseAdmin
       .from("document_types")
       .select(SELECT_FIELDS)
@@ -77,8 +77,30 @@ export async function GET(request: Request) {
       console.error("[document-types] all query error:", error.message);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    documentTypes = data ?? [];
+    documentTypes = (data ?? []) as Array<Record<string, unknown>>;
     console.log("[document-types] returning all:", documentTypes.length);
+  }
+
+  // If caseId provided, mark which docs are already added to this case
+  if (caseId && documentTypes.length > 0) {
+    const { data: existing } = await supabaseAdmin
+      .from("case_documents")
+      .select("label, template_document_id")
+      .eq("case_id", caseId);
+
+    const existingLabels = new Set((existing ?? []).map((d) => (d.label as string).toLowerCase()));
+    const existingTemplateIds = new Set(
+      (existing ?? [])
+        .map((d) => d.template_document_id as string | null)
+        .filter(Boolean)
+    );
+
+    documentTypes = documentTypes.map((dt) => ({
+      ...dt,
+      already_added:
+        existingTemplateIds.has(dt.id as string) ||
+        existingLabels.has((dt.label as string).toLowerCase()),
+    }));
   }
 
   return NextResponse.json({ documentTypes });
