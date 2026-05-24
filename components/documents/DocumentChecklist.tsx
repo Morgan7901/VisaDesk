@@ -322,13 +322,11 @@ function ProgressSummary({ documents }: { documents: CaseDocument[] }) {
 function FileReviewRow({
   file,
   tracksExpiry,
-  caseDocumentId,
   onUpdated,
   onDeleted,
 }: {
   file: DocumentFile;
   tracksExpiry: boolean;
-  caseDocumentId: string;
   onUpdated: (fileId: string, patch: Partial<DocumentFile>, newOverallStatus: string) => void;
   onDeleted: (fileId: string, newOverallStatus: string) => void;
 }) {
@@ -581,13 +579,11 @@ function FileReviewRow({
 
 function DocRow({
   doc: initialDoc,
-  caseId,
   onUpdated,
   onDeleted,
   onRequestForDoc,
 }: {
   doc: CaseDocument;
-  caseId: string;
   onUpdated: (id: string, patch: Partial<CaseDocument>) => void;
   onDeleted: (id: string) => void;
   onRequestForDoc: (doc: CaseDocument) => void;
@@ -989,7 +985,6 @@ function DocRow({
                       key={file.id}
                       file={file}
                       tracksExpiry={doc.tracks_expiry}
-                      caseDocumentId={doc.id}
                       onUpdated={handleFileUpdated}
                       onDeleted={handleFileDeleted}
                     />
@@ -1128,7 +1123,6 @@ function CategorySection({
             <DocRow
               key={doc.id}
               doc={doc}
-              caseId={caseId}
               onUpdated={onDocUpdated}
               onDeleted={onDocDeleted}
               onRequestForDoc={onRequestForDoc}
@@ -1145,13 +1139,11 @@ function CategorySection({
 function LoadTemplateModal({
   caseId,
   visaSubclass,
-  existingLabels,
   onAdded,
   onClose,
 }: {
   caseId: string;
   visaSubclass: string | null;
-  existingLabels: Set<string>;
   onAdded: (newDocs: CaseDocument[]) => void;
   onClose: () => void;
 }) {
@@ -2422,7 +2414,6 @@ export function DocumentChecklist({
         <LoadTemplateModal
           caseId={caseId}
           visaSubclass={visaSubclass}
-          existingLabels={existingLabels}
           onAdded={handleDocsAdded}
           onClose={() => setShowLoadTemplate(false)}
         />
