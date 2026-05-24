@@ -1056,7 +1056,6 @@ function DocRow({
 function CategorySection({
   name,
   documents,
-  caseId,
   isCollapsed,
   onToggleCollapse,
   onDocUpdated,
@@ -1065,7 +1064,6 @@ function CategorySection({
 }: {
   name: string;
   documents: CaseDocument[];
-  caseId: string;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   onDocUpdated: (id: string, patch: Partial<CaseDocument>) => void;
@@ -2398,7 +2396,6 @@ export function DocumentChecklist({
               key={cat}
               name={cat}
               documents={docs}
-              caseId={caseId}
               isCollapsed={collapsedCategories.has(cat)}
               onToggleCollapse={() => toggleCategory(cat)}
               onDocUpdated={handleDocUpdated}
