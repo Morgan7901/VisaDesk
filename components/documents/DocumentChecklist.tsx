@@ -104,6 +104,18 @@ const CATEGORY_ORDER = [
   "Other",
 ];
 
+// SC-500 specific category order
+const SC500_CATEGORY_ORDER = [
+  "Study Documents",
+  "Identity",
+  "Education",
+  "Financial",
+  "Health and Character",
+  "Immigration History",
+  "Internal",
+  "Other",
+];
+
 // "uploaded" in DB means files are pending review → display as "Under Review"
 const STATUS_CONFIG: Record<
   string,
@@ -2227,11 +2239,12 @@ export function DocumentChecklist({
   });
 
   // Group into categories
+  const activeCategoryOrder = visaSubclass === "500" ? SC500_CATEGORY_ORDER : CATEGORY_ORDER;
   const allCategories = Array.from(
     new Set(documents.map((d) => d.category ?? "Other"))
   ).sort((a, b) => {
-    const ai = CATEGORY_ORDER.indexOf(a);
-    const bi = CATEGORY_ORDER.indexOf(b);
+    const ai = activeCategoryOrder.indexOf(a);
+    const bi = activeCategoryOrder.indexOf(b);
     if (ai === -1 && bi === -1) return a.localeCompare(b);
     if (ai === -1) return 1;
     if (bi === -1) return -1;
